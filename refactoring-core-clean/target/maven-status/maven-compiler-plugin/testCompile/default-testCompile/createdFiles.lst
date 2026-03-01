@@ -1,0 +1,13 @@
+uma\master\isia\refactoring\ForMarkerVisitorTest.class
+uma\master\isia\refactoring\ForEachMarkerVisitorTest.class
+uma\master\isia\refactoring\ForEachToWhileVisitorTest.class
+uma\master\isia\refactoring\util\StructureVisitor.class
+uma\master\isia\refactoring\PruebaTest.class
+uma\master\isia\refactoring\SemanticTest.class
+uma\master\isia\refactoring\LoopRewriterTest.class
+uma\master\isia\refactoring\ForToWhileVisitorTest.class
+uma\master\isia\refactoring\util\CompilationTestUnit.class
+uma\master\isia\refactoring\StructuralTest.class
+uma\master\isia\refactoring\util\BehaviorTestHelper.class
+uma\master\isia\refactoring\util\CompilationTestHelper.class
+uma\master\isia\refactoring\CompilerTest.class

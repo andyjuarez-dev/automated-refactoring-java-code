@@ -1,0 +1,14 @@
+uma\master\isia\refactoring\ExceptionAnnotator.class
+uma\master\isia\refactoring\ForMarkerVisitor.class
+uma\master\isia\refactoring\ForToWhileVisitor.class
+uma\master\isia\refactoring\LoopRewriterFinal.class
+uma\master\isia\refactoring\RefactoringEngine.class
+uma\master\isia\refactoring\ExceptionAnnotator$1.class
+uma\master\isia\refactoring\ExceptionAnnotator$2.class
+uma\master\isia\refactoring\ForEachToWhileVisitor$ConversionResult.class
+uma\master\isia\refactoring\FlowAnnotator$1.class
+uma\master\isia\refactoring\LoopRewriterFirst.class
+uma\master\isia\refactoring\ForEachToWhileVisitor$ForEachKind.class
+uma\master\isia\refactoring\ForEachToWhileVisitor.class
+uma\master\isia\refactoring\FlowAnnotator.class
+uma\master\isia\refactoring\ForEachMarkerVisitor.class

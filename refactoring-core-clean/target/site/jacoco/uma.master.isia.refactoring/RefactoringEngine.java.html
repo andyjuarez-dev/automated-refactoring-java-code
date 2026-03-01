@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RefactoringEngine.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">refactoring-core</a> &gt; <a href="index.source.html" class="el_package">uma.master.isia.refactoring</a> &gt; <span class="el_source">RefactoringEngine.java</span></div><h1>RefactoringEngine.java</h1><pre class="source lang-java linenums">package uma.master.isia.refactoring;
+
+import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.ASTParser;
+import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
+import org.eclipse.jface.text.Document;
+import org.eclipse.jface.text.IDocument;
+import org.eclipse.text.edits.TextEdit;
+
+
+<span class="nc" id="L12">public class RefactoringEngine {</span>
+
+	public static String runFullPipeline(String source) throws Exception {
+<span class="fc" id="L15">	    String step1 = applyForToWhile(source);</span>
+<span class="fc" id="L16">	    String step2 = applyForEachToWhile(step1);</span>
+<span class="fc" id="L17">	    String step3 = applyStructuralRefactoring1(step2); // Aquí irían FlowAnnotator y LoopRewriter</span>
+<span class="fc" id="L18">	    String step4 = applyStructuralRefactoring2(step3);</span>
+<span class="fc" id="L19">	    return step4;</span>
+	}
+	
+	public static String runFirstPartPipeline(String source) throws Exception {
+<span class="fc" id="L23">	    String step1 = applyForToWhile(source);</span>
+<span class="fc" id="L24">	    String step2 = applyForEachToWhile(step1);</span>
+	    //String step3 = applyStructuralRefactoring1(step2); // Aquí irían FlowAnnotator y LoopRewriter
+	    //String step4 = applyStructuralRefactoring2(step3);
+<span class="fc" id="L27">	    return step2;</span>
+	}
+	
+	
+	private static String applyForToWhile(String source) throws Exception {
+	    // 1. Configurar el Parser para trabajar con Strings
+<span class="fc" id="L33">	    ASTParser parser = ASTParser.newParser(AST.JLS21);</span>
+<span class="fc" id="L34">	    parser.setSource(source.toCharArray());</span>
+<span class="fc" id="L35">	    parser.setKind(ASTParser.K_COMPILATION_UNIT);</span>
+<span class="fc" id="L36">	    parser.setResolveBindings(true);</span>
+<span class="fc" id="L37">	    parser.setEnvironment(null, null, null, true); // Usa el classpath del sistema</span>
+<span class="fc" id="L38">	    parser.setUnitName(&quot;Temp.java&quot;);</span>
+
+<span class="fc" id="L40">	    CompilationUnit cu = (CompilationUnit) parser.createAST(null);</span>
+	    
+	    // 2. Ejecutar el Marcador
+<span class="fc" id="L43">	    ForMarkerVisitor forMarker = new ForMarkerVisitor();</span>
+<span class="fc" id="L44">	    cu.accept(forMarker);</span>
+
+	    // 3. Si hay cambios, aplicar la transformación
+<span class="fc bfc" id="L47" title="All 2 branches covered.">	    if (!forMarker.getMarkedFors().isEmpty()) {</span>
+<span class="fc" id="L48">	        ASTRewrite forRewrite = ASTRewrite.create(cu.getAST());</span>
+<span class="fc" id="L49">	        ForToWhileVisitor forConverter = new ForToWhileVisitor(forRewrite);</span>
+<span class="fc" id="L50">	        cu.accept(forConverter);</span>
+
+	        // Aplicar los cambios al documento en memoria
+<span class="fc" id="L53">	        IDocument document = new Document(source);</span>
+<span class="fc" id="L54">	        TextEdit edits = forRewrite.rewriteAST(document, java.util.Collections.emptyMap());</span>
+<span class="fc" id="L55">	        edits.apply(document);</span>
+	        
+<span class="fc" id="L57">	        return document.get(); // Retornamos el código ya transformado</span>
+	    }
+	    
+<span class="fc" id="L60">	    return source; // Si no hubo cambios, devolvemos el original</span>
+	}
+	
+	
+	private static String applyForEachToWhile(String source) throws Exception {
+<span class="fc" id="L65">	    ASTParser parser = createParser(source);</span>
+<span class="fc" id="L66">	    CompilationUnit cu = (CompilationUnit) parser.createAST(null);</span>
+
+<span class="fc" id="L68">	    ForEachMarkerVisitor foreachMarker = new ForEachMarkerVisitor();</span>
+<span class="fc" id="L69">	    cu.accept(foreachMarker);</span>
+
+<span class="fc bfc" id="L71" title="All 2 branches covered.">	    if (!foreachMarker.getMarkedFors().isEmpty()) {</span>
+<span class="fc" id="L72">	        ASTRewrite rewrite = ASTRewrite.create(cu.getAST());</span>
+	        // Pasamos 'cu' porque tu constructor de ForEachToWhileVisitor3 lo pide
+<span class="fc" id="L74">	        ForEachToWhileVisitor converter = new ForEachToWhileVisitor(foreachMarker.getMarkedFors(), rewrite, cu);</span>
+<span class="fc" id="L75">	        cu.accept(converter);</span>
+
+<span class="fc" id="L77">	        return executeRewrite(source, rewrite);</span>
+	    }
+<span class="fc" id="L79">	    return source;</span>
+	}	
+	
+	private static String applyStructuralRefactoring1(String source) throws Exception {
+<span class="fc" id="L83">	    ASTParser parser = createParser(source);</span>
+<span class="fc" id="L84">	    CompilationUnit cu = (CompilationUnit) parser.createAST(null);</span>
+
+	    // Fase 1: Anotación de flujo (FlowAnnotator)
+<span class="fc" id="L87">	    cu.accept(new ExceptionAnnotator(cu));</span>
+<span class="fc" id="L88">	    cu.accept(new FlowAnnotator(cu));</span>
+
+	    // Fase 2: Reescritura de bucles (LoopRewriter)
+<span class="fc" id="L91">	    ASTRewrite rewriter = ASTRewrite.create(cu.getAST());</span>
+<span class="fc" id="L92">	    cu.accept(new LoopRewriterFirst(rewriter));</span>
+
+<span class="fc" id="L94">	    return executeRewrite(source, rewriter);</span>
+	}
+
+	private static String applyStructuralRefactoring2(String source) throws Exception {
+<span class="fc" id="L98">	    ASTParser parser = createParser(source);</span>
+<span class="fc" id="L99">	    CompilationUnit cu = (CompilationUnit) parser.createAST(null);</span>
+
+	    // Fase 1: Anotación de flujo (FlowAnnotator)
+<span class="fc" id="L102">	    cu.accept(new ExceptionAnnotator(cu));</span>
+<span class="fc" id="L103">	    cu.accept(new FlowAnnotator(cu));</span>
+
+	    // Fase 2: Reescritura de bucles (LoopRewriter)
+<span class="fc" id="L106">	    ASTRewrite rewriter = ASTRewrite.create(cu.getAST());</span>
+<span class="fc" id="L107">	    cu.accept(new LoopRewriterFinal(rewriter));</span>
+
+<span class="fc" id="L109">	    return executeRewrite(source, rewriter);</span>
+	}
+	
+	
+	// Helpers
+	private static ASTParser createParser(String source) {
+<span class="fc" id="L115">	    ASTParser parser = ASTParser.newParser(AST.JLS21);</span>
+<span class="fc" id="L116">	    parser.setSource(source.toCharArray());</span>
+<span class="fc" id="L117">	    parser.setKind(ASTParser.K_COMPILATION_UNIT);</span>
+<span class="fc" id="L118">	    parser.setResolveBindings(true);</span>
+<span class="fc" id="L119">	    parser.setEnvironment(null, null, null, true);</span>
+<span class="fc" id="L120">	    parser.setUnitName(&quot;Temp.java&quot;);</span>
+<span class="fc" id="L121">	    return parser;</span>
+	}
+
+	private static String executeRewrite(String source, ASTRewrite rewriter) throws Exception {
+<span class="fc" id="L125">	    IDocument document = new Document(source);</span>
+<span class="fc" id="L126">	    TextEdit edits = rewriter.rewriteAST(document, java.util.Collections.emptyMap());</span>
+<span class="fc" id="L127">	    edits.apply(document);</span>
+<span class="fc" id="L128">	    return document.get();</span>
+	}	
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

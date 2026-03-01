@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>FlowAnnotator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">refactoring-core</a> &gt; <a href="index.source.html" class="el_package">uma.master.isia.refactoring</a> &gt; <span class="el_source">FlowAnnotator.java</span></div><h1>FlowAnnotator.java</h1><pre class="source lang-java linenums">package uma.master.isia.refactoring;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import org.eclipse.jdt.core.dom.ASTNode;
+import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.Block;
+import org.eclipse.jdt.core.dom.BreakStatement;
+import org.eclipse.jdt.core.dom.CatchClause;
+import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.ContinueStatement;
+import org.eclipse.jdt.core.dom.DoStatement;
+import org.eclipse.jdt.core.dom.EnhancedForStatement;
+import org.eclipse.jdt.core.dom.ForStatement;
+import org.eclipse.jdt.core.dom.IfStatement;
+import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
+import org.eclipse.jdt.core.dom.Statement;
+import org.eclipse.jdt.core.dom.SwitchStatement;
+import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
+import org.eclipse.jdt.core.dom.WhileStatement;
+
+public class FlowAnnotator extends ASTVisitor {
+	
+<span class="fc" id="L25">    private final Set&lt;String&gt; usedNames = new HashSet&lt;&gt;();</span>
+<span class="fc" id="L26">    private final Set&lt;String&gt; existingNames = new HashSet&lt;&gt;(); // variables/parametros ya declarados</span>
+
+<span class="fc" id="L28">    public FlowAnnotator(CompilationUnit cu) {</span>
+        // Recolectar nombres existentes para evitar colisiones 
+<span class="fc" id="L30">        cu.accept(new ASTVisitor() {</span>
+            @Override
+            public boolean visit(VariableDeclarationFragment node) {
+<span class="fc" id="L33">                existingNames.add(node.getName().getIdentifier());</span>
+<span class="fc" id="L34">                return true;</span>
+            }
+
+            @Override
+            public boolean visit(SingleVariableDeclaration node) {
+<span class="fc" id="L39">                existingNames.add(node.getName().getIdentifier());</span>
+<span class="fc" id="L40">                return true;</span>
+            }
+        });
+<span class="fc" id="L43">    }</span>
+
+    @SuppressWarnings(&quot;unchecked&quot;)
+	@Override
+     public boolean visit(BreakStatement node) {
+        // buscar el while o do-while padre mas cercano
+    	//boolean finallyBreak = false;
+<span class="fc" id="L50">    	boolean hayIf = false;</span>
+//    	System.out.println(&quot;anoto los break&quot;);
+<span class="fc bfc" id="L52" title="All 2 branches covered.">    	if (node.getLabel() != null) // break etiquetado</span>
+<span class="fc" id="L53">    		return true;</span>
+    	
+<span class="fc" id="L55">        ASTNode actual = node.getParent();</span>
+<span class="fc bfc" id="L56" title="All 10 branches covered.">        while (actual != null </span>
+                &amp;&amp; !(actual instanceof WhileStatement) 
+                &amp;&amp; !(actual instanceof DoStatement) 
+                &amp;&amp; !(actual instanceof SwitchStatement)
+                &amp;&amp; !(actual instanceof EnhancedForStatement)) {
+<span class="fc bfc" id="L61" title="All 2 branches covered.">        	if (actual instanceof IfStatement)</span>
+<span class="fc" id="L62">        		hayIf = true;</span>
+<span class="fc" id="L63">            actual = actual.getParent();</span>
+        }
+
+<span class="fc bfc" id="L66" title="All 6 branches covered.">        if (actual == null || actual instanceof SwitchStatement || actual instanceof EnhancedForStatement) {</span>
+<span class="fc" id="L67">            return true; // es un break de switch o de ForEach sin resolver, no se procesa</span>
+        }
+        
+<span class="fc bfc" id="L70" title="All 2 branches covered.">        if (!hayIf) {</span>
+  //      	System.out.println(&quot;No depende de un if&quot;);
+<span class="fc" id="L72">        	return true;</span>
+        }
+<span class="fc" id="L74">        ASTNode loopParent = actual;</span>
+        String name;
+        Set&lt;String&gt; names;
+<span class="fc bfc" id="L77" title="All 2 branches covered.">        if (node.getProperty(&quot;breakInsideFinally&quot;) != null) {</span>
+        //	System.out.println(&quot;------------------- Es un break de finally ---------------\n&quot;);
+//        	System.out.println(node.getParent());
+        	
+<span class="fc" id="L81">            names = (Set&lt;String&gt;) loopParent.getProperty(&quot;breakNamesFinally&quot;);</span>
+<span class="fc" id="L82">            name = createName(&quot;stay&quot;);            </span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">            if (names == null) {</span>
+<span class="fc" id="L84">            	names = new HashSet&lt;String&gt;();</span>
+            }
+<span class="fc" id="L86">            names.add(name);</span>
+<span class="fc" id="L87">            loopParent.setProperty(&quot;breakNamesFinally&quot;, names);</span>
+            
+            // marcar el break y las sentencias posteriores
+<span class="fc" id="L90">            node.setProperty(&quot;breakNameFinally&quot;, name);</span>
+<span class="fc" id="L91">            markFollowingStatements(node, name);            </span>
+        	//System.out.println(&quot;------------------- Es un break de finally ANOTADO ---------------\n&quot;);
+        }
+        else {
+        	//System.out.println(&quot;------------------- Es un break normal ---------------\n&quot;);
+        	//System.out.println(node.getParent());
+        	
+<span class="fc" id="L98">	        name = (String) loopParent.getProperty(&quot;breakName&quot;);</span>
+<span class="fc bfc" id="L99" title="All 2 branches covered.">	        if (name == null) {</span>
+<span class="fc" id="L100">	            name = createName(&quot;stay&quot;);</span>
+<span class="fc" id="L101">	            loopParent.setProperty(&quot;breakName&quot;, name);</span>
+	        }
+	
+	        // marcar el break y las sentencias posteriores
+<span class="fc" id="L105">	        node.setProperty(&quot;breakName&quot;, name);</span>
+<span class="fc" id="L106">            markFollowingStatements(node, name);        </span>
+	        //System.out.println(&quot;------------------- Es un break de normal ANOTADO ---------------\n&quot;);
+	        
+        }
+<span class="fc" id="L110">        return true; // se sigue recorriendo</span>
+    }
+
+    
+    @SuppressWarnings(&quot;unchecked&quot;)
+	@Override
+    public boolean visit(ContinueStatement node) {
+
+        // buscar el while o do-while padre mas cercano
+//    	System.out.println(&quot;anoto los continue&quot;);
+<span class="fc bfc" id="L120" title="All 2 branches covered.">    	if (node.getLabel() != null) // continue etiquetado</span>
+<span class="fc" id="L121">    		return true;</span>
+<span class="fc" id="L122">    	boolean hayIf = false;</span>
+<span class="fc" id="L123">        ASTNode actual = node.getParent();</span>
+<span class="fc bfc" id="L124" title="All 8 branches covered.">        while (actual != null </span>
+                &amp;&amp; !(actual instanceof WhileStatement) 
+                &amp;&amp; !(actual instanceof DoStatement) 
+                &amp;&amp; !(actual instanceof SwitchStatement)) {
+<span class="fc bfc" id="L128" title="All 2 branches covered.">        	if (actual instanceof IfStatement)</span>
+<span class="fc" id="L129">        		hayIf = true;</span>
+<span class="fc" id="L130">            actual = actual.getParent();</span>
+        }
+        
+<span class="pc bpc" id="L133" title="1 of 6 branches missed.">        if (actual == null || actual instanceof SwitchStatement || actual instanceof EnhancedForStatement) {</span>
+        	//System.out.println(&quot;Continue de switch&quot;);
+<span class="fc" id="L135">            return true; </span>
+        }
+
+<span class="pc bpc" id="L138" title="1 of 2 branches missed.">        if (!hayIf) {</span>
+        	//System.out.println(&quot;No depende de un if&quot;);
+<span class="nc" id="L140">        	return true;</span>
+        }
+<span class="fc" id="L142">        ASTNode loopParent = actual;</span>
+        String name;
+        Set&lt;String&gt; names;
+<span class="fc bfc" id="L145" title="All 2 branches covered.">        if (node.getProperty(&quot;continueInsideFinally&quot;) != null) {</span>
+        	//System.out.println(&quot;------------------- Es un continue de finally ---------------\n&quot;);
+        	//System.out.println(node.getParent());
+        	
+<span class="fc" id="L149">            names = (Set&lt;String&gt;) loopParent.getProperty(&quot;continueNamesFinally&quot;);</span>
+<span class="fc" id="L150">            name = createName(&quot;keep&quot;);            </span>
+<span class="fc bfc" id="L151" title="All 2 branches covered.">            if (names == null) {</span>
+<span class="fc" id="L152">            	names = new HashSet&lt;String&gt;();</span>
+            }
+<span class="fc" id="L154">            names.add(name);</span>
+<span class="fc" id="L155">            loopParent.setProperty(&quot;continueNamesFinally&quot;, names);</span>
+            
+            // marcar el break y las sentencias posteriores
+<span class="fc" id="L158">            node.setProperty(&quot;continueNameFinally&quot;, name);</span>
+<span class="fc" id="L159">            markFollowingStatements(node, name);            </span>
+        	//System.out.println(&quot;------------------- Es un continue de finally ANOTADO ---------------\n&quot;);
+        }
+        else {
+        	//System.out.println(&quot;------------------- Es un continue normal ---------------\n&quot;);
+        	//System.out.println(node.getParent());
+        	
+<span class="fc" id="L166">	        name = (String) loopParent.getProperty(&quot;continueName&quot;);</span>
+<span class="fc bfc" id="L167" title="All 2 branches covered.">	        if (name == null) {</span>
+	            //name = createName(&quot;continue&quot;);
+<span class="fc" id="L169">	            name = createName(&quot;keep&quot;);</span>
+<span class="fc" id="L170">	            loopParent.setProperty(&quot;continueName&quot;, name);</span>
+	        }
+	
+	        // marcar el continue y las sentencias posteriores
+<span class="fc" id="L174">	        node.setProperty(&quot;continueName&quot;, name);</span>
+<span class="fc" id="L175">            markFollowingStatements(node, name);        </span>
+	        //System.out.println(&quot;------------------- Es un continue normal ANOTADO ---------------\n&quot;);
+        }
+<span class="fc" id="L178">        return true; // se sigue recorriendo</span>
+    }
+    
+    
+    private String createName(String base) {
+<span class="fc" id="L183">        int i = 1;</span>
+        String candidate;
+        do {
+<span class="fc" id="L186">            candidate = base + i++;</span>
+<span class="pc bpc" id="L187" title="1 of 4 branches missed.">        } while (usedNames.contains(candidate) || existingNames.contains(candidate));</span>
+<span class="fc" id="L188">        usedNames.add(candidate);</span>
+<span class="fc" id="L189">        return candidate;</span>
+    }
+    
+    @SuppressWarnings(&quot;unchecked&quot;)
+    private void markFollowingStatements(Statement ruptureStmt, String name) {
+<span class="fc" id="L194">        ASTNode parent = ruptureStmt.getParent();</span>
+<span class="fc" id="L195">        ASTNode son = ruptureStmt;</span>
+<span class="fc" id="L196">        boolean end = false;</span>
+        Set&lt;String&gt; moves;
+        
+<span class="pc bpc" id="L199" title="1 of 4 branches missed.">        while (parent != null &amp;&amp; !end) {</span>
+        	
+<span class="pc bpc" id="L201" title="2 of 8 branches missed.">        	end =     (parent instanceof WhileStatement </span>
+                    || parent instanceof DoStatement 
+                    || parent instanceof ForStatement 
+                    || parent instanceof EnhancedForStatement);
+
+<span class="fc bfc" id="L206" title="All 2 branches covered.">        	if (!end) {</span>
+<span class="fc bfc" id="L207" title="All 2 branches covered.">                if (parent instanceof Block block) {</span>
+<span class="fc" id="L208">                    List&lt;Statement&gt; stmts = (List&lt;Statement&gt;) block.statements();</span>
+<span class="fc" id="L209">                    int index = stmts.indexOf(son);</span>
+                    
+                    // CAMBIO AQUÍ: Solo marcamos la SIGUIENTE, no todas
+<span class="pc bpc" id="L212" title="1 of 4 branches missed.">                    if (index &gt;= 0 &amp;&amp; index &lt; (stmts.size() - 1)) {</span>
+<span class="fc" id="L213">                        Statement nextStmt = stmts.get(index + 1);</span>
+<span class="fc" id="L214">                        moves = (HashSet&lt;String&gt;) nextStmt.getProperty(&quot;moves&quot;);</span>
+<span class="fc bfc" id="L215" title="All 2 branches covered.">                        if (moves == null) {</span>
+<span class="fc" id="L216">                            moves = new HashSet&lt;String&gt;();</span>
+                        }
+<span class="fc" id="L218">                        moves.add(name);</span>
+<span class="fc" id="L219">                        nextStmt.setProperty(&quot;moves&quot;, moves);</span>
+                        
+                        // IMPORTANTE: Una vez que marcamos la primera del bloque, 
+                        // ya no necesitamos seguir marcando hermanos en este nivel.
+                    }
+            	}
+<span class="fc bfc" id="L225" title="All 2 branches covered.">                if (parent instanceof CatchClause catchClause) {</span>
+<span class="fc" id="L226">                    Block body = catchClause.getBody();</span>
+<span class="fc" id="L227">                    List&lt;Statement&gt; statements = (List&lt;Statement&gt;) body.statements();</span>
+<span class="fc" id="L228">                    int idx = statements.indexOf(son);</span>
+
+<span class="pc bpc" id="L230" title="3 of 4 branches missed.">                    if (idx &gt;= 0 &amp;&amp; idx &lt; (statements.size() - 1)) {</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">                        for (int i = idx + 1; i &lt; statements.size(); i++) {</span>
+<span class="nc" id="L232">                        	moves = (HashSet&lt;String&gt;) statements.get(idx).getProperty(&quot;moves&quot;);</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">                        	if (moves == null) {</span>
+<span class="nc" id="L234">                        		moves = new HashSet&lt;String&gt;();</span>
+                        	}
+<span class="nc" id="L236">                        	moves.add(name);</span>
+<span class="nc" id="L237">                            statements.get(idx).setProperty(&quot;moves&quot;, moves);</span>
+                        }
+                    } 
+                }
+<span class="fc" id="L241">                son = parent;</span>
+<span class="fc" id="L242">                parent = son.getParent();</span>
+        	}
+        }
+        
+<span class="fc" id="L246">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

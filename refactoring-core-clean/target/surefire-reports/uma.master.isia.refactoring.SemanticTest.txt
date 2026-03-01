@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: uma.master.isia.refactoring.SemanticTest
+-------------------------------------------------------------------------------
+Tests run: 33, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.323 s -- in uma.master.isia.refactoring.SemanticTest

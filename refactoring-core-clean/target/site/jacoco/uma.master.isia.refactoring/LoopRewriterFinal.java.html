@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LoopRewriterFinal.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">refactoring-core</a> &gt; <a href="index.source.html" class="el_package">uma.master.isia.refactoring</a> &gt; <span class="el_source">LoopRewriterFinal.java</span></div><h1>LoopRewriterFinal.java</h1><pre class="source lang-java linenums">package uma.master.isia.refactoring;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.ASTNode;
+import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.Assignment;
+import org.eclipse.jdt.core.dom.Block;
+import org.eclipse.jdt.core.dom.BreakStatement;
+import org.eclipse.jdt.core.dom.ContinueStatement;
+import org.eclipse.jdt.core.dom.DoStatement;
+import org.eclipse.jdt.core.dom.ExpressionStatement;
+import org.eclipse.jdt.core.dom.InfixExpression;
+import org.eclipse.jdt.core.dom.ParenthesizedExpression;
+import org.eclipse.jdt.core.dom.PrimitiveType;
+import org.eclipse.jdt.core.dom.SimpleName;
+import org.eclipse.jdt.core.dom.Statement;
+import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
+import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
+import org.eclipse.jdt.core.dom.WhileStatement;
+import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
+import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
+
+public class LoopRewriterFinal extends ASTVisitor {
+
+
+    private ASTRewrite rewrite;
+
+<span class="fc" id="L32">    public LoopRewriterFinal(ASTRewrite rewrite) {</span>
+<span class="fc" id="L33">        this.rewrite = rewrite;</span>
+<span class="fc" id="L34">    }</span>
+    
+    @Override
+    public void endVisit(BreakStatement node) {
+      	// Reemplaza el continue por la variable que sea = false
+<span class="fc" id="L39">          String nombre = (String) node.getProperty(&quot;breakName&quot;);</span>
+//          System.out.println(&quot;entro en el continue&quot;);
+<span class="fc bfc" id="L41" title="All 2 branches covered.">          if (nombre == null)</span>
+<span class="fc" id="L42">          	nombre = (String) node.getProperty(&quot;breakNameFinally&quot;);</span>
+<span class="fc bfc" id="L43" title="All 2 branches covered.">          if (nombre != null) {</span>
+<span class="fc" id="L44">              AST ast = node.getAST();</span>
+<span class="fc" id="L45">              Assignment asign = ast.newAssignment();</span>
+<span class="fc" id="L46">              asign.setLeftHandSide(ast.newSimpleName(nombre));</span>
+<span class="fc" id="L47">              asign.setRightHandSide(ast.newBooleanLiteral(false));</span>
+<span class="fc" id="L48">              asign.setOperator(Assignment.Operator.ASSIGN);</span>
+
+<span class="fc" id="L50">              ExpressionStatement reemplazo = ast.newExpressionStatement(asign);</span>
+<span class="fc" id="L51">              rewrite.replace(node, reemplazo, null);</span>
+          }
+<span class="fc" id="L53">    }</span>
+
+  @Override
+  public void endVisit(ContinueStatement node) {
+    	// Reemplaza el continue por la variable que sea = false
+<span class="fc" id="L58">        String nombre = (String) node.getProperty(&quot;continueName&quot;);</span>
+//        System.out.println(&quot;entro en el continue&quot;);
+<span class="fc bfc" id="L60" title="All 2 branches covered.">        if (nombre == null)</span>
+<span class="fc" id="L61">        	nombre = (String) node.getProperty(&quot;continueNameFinally&quot;);</span>
+<span class="fc bfc" id="L62" title="All 2 branches covered.">        if (nombre != null) {</span>
+<span class="fc" id="L63">            AST ast = node.getAST();</span>
+<span class="fc" id="L64">            Assignment asign = ast.newAssignment();</span>
+<span class="fc" id="L65">            asign.setLeftHandSide(ast.newSimpleName(nombre));</span>
+<span class="fc" id="L66">            asign.setRightHandSide(ast.newBooleanLiteral(false));</span>
+<span class="fc" id="L67">            asign.setOperator(Assignment.Operator.ASSIGN);</span>
+
+<span class="fc" id="L69">            ExpressionStatement reemplazo = ast.newExpressionStatement(asign);</span>
+<span class="fc" id="L70">            rewrite.replace(node, reemplazo, null);</span>
+        }
+<span class="fc" id="L72">  }</span>
+    
+
+  @Override
+  public boolean visit(WhileStatement node) {
+<span class="fc bfc" id="L77" title="All 2 branches covered.">	  if (needsFlowRewrite(node))</span>
+<span class="fc" id="L78">		  processLoop3(node);</span>
+<span class="fc" id="L79">      return true;</span>
+  }
+
+  
+  @Override
+  public boolean visit(DoStatement node) {
+<span class="pc bpc" id="L85" title="1 of 2 branches missed.">	  if (needsFlowRewrite(node))</span>
+<span class="fc" id="L86">		  processLoop3(node);</span>
+<span class="fc" id="L87">      return true;</span>
+  }
+
+  private boolean needsFlowRewrite(Statement node) {
+<span class="fc bfc" id="L91" title="All 2 branches covered.">	    return node.getProperty(&quot;breakName&quot;) != null</span>
+<span class="fc bfc" id="L92" title="All 2 branches covered.">	        || node.getProperty(&quot;breakNamesFinally&quot;) != null</span>
+<span class="fc bfc" id="L93" title="All 2 branches covered.">	        || node.getProperty(&quot;continueName&quot;) != null</span>
+<span class="pc bpc" id="L94" title="1 of 2 branches missed.">	        || node.getProperty(&quot;continueNamesFinally&quot;) != null;</span>
+	}
+  
+  @SuppressWarnings(&quot;unchecked&quot;)
+private void processLoop3(Statement loopNode) {
+
+  	/*
+  	 * Esta parte agrega las booleanas necesarias (antes o despues del while, por ahora, solo antes)
+  	 */
+<span class="fc" id="L103">      String nameB  = (String) loopNode.getProperty(&quot;breakName&quot;);</span>
+<span class="fc" id="L104">      Set&lt;String&gt; namesF = (Set&lt;String&gt;) loopNode.getProperty(&quot;breakNamesFinally&quot;);</span>
+<span class="fc" id="L105">      String continueName = (String) loopNode.getProperty(&quot;continueName&quot;);</span>
+<span class="fc" id="L106">      Set&lt;String&gt; contNamesF = (Set&lt;String&gt;) loopNode.getProperty(&quot;continueNamesFinally&quot;);</span>
+      
+<span class="pc bpc" id="L108" title="3 of 8 branches missed.">      if ((nameB == null) &amp;&amp; (namesF == null) &amp;&amp; (continueName == null) &amp;&amp; (contNamesF == null)) </span>
+<span class="nc" id="L109">      	return;</span>
+
+<span class="fc" id="L111">      AST ast = loopNode.getAST();</span>
+
+<span class="fc bfc" id="L113" title="All 2 branches covered.">      if (nameB != null) {</span>
+          // crear: boolean nombre = true;
+<span class="fc" id="L115">          VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();</span>
+<span class="fc" id="L116">          frag.setName(ast.newSimpleName(nameB));</span>
+<span class="fc" id="L117">          frag.setInitializer(ast.newBooleanLiteral(true));</span>
+<span class="fc" id="L118">          VariableDeclarationStatement decl = ast.newVariableDeclarationStatement(frag);</span>
+<span class="fc" id="L119">          decl.setType(ast.newPrimitiveType(PrimitiveType.BOOLEAN));</span>
+
+          // insertar declaracion antes del loop o envolver en Block si el parent no es Block
+<span class="fc" id="L122">          insertDeclarationBefore(loopNode, decl);</span>
+      }
+
+<span class="fc bfc" id="L125" title="All 2 branches covered.">      if (namesF != null) {</span>
+          // crear: boolean nombre = true;
+          //VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();
+<span class="fc bfc" id="L128" title="All 2 branches covered.">          for (String name : namesF) {</span>
+<span class="fc" id="L129">              VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();</span>
+<span class="fc" id="L130">              frag.setName(ast.newSimpleName(name));</span>
+<span class="fc" id="L131">              frag.setInitializer(ast.newBooleanLiteral(true));</span>
+<span class="fc" id="L132">              VariableDeclarationStatement decl = ast.newVariableDeclarationStatement(frag);</span>
+<span class="fc" id="L133">              decl.setType(ast.newPrimitiveType(PrimitiveType.BOOLEAN));</span>
+
+              // insertar declaracion antes del loop o envolver en Block si el parent no es Block
+<span class="fc" id="L136">              insertDeclarationBefore(loopNode, decl);</span>
+<span class="fc" id="L137">          }</span>
+      }
+
+      /*
+       * Esta parte cambia las condiciones del while
+       */
+<span class="fc bfc" id="L143" title="All 4 branches covered.">      if ((nameB != null) || (namesF != null)) {</span>
+<span class="fc" id="L144">	        Expression originalCond = null;</span>
+<span class="fc bfc" id="L145" title="All 2 branches covered.">	        if (loopNode instanceof WhileStatement) {</span>
+<span class="fc" id="L146">	            originalCond = ((WhileStatement) loopNode).getExpression();</span>
+<span class="pc bpc" id="L147" title="1 of 2 branches missed.">	        } else if (loopNode instanceof DoStatement) {</span>
+<span class="fc" id="L148">	            originalCond = ((DoStatement) loopNode).getExpression();</span>
+	        }
+	        
+<span class="fc" id="L151">	        ParenthesizedExpression paren = ast.newParenthesizedExpression();</span>
+	        // usar createCopyTarget para que ASTRewrite maneje la copia
+<span class="fc" id="L153">	        paren.setExpression((Expression) rewrite.createCopyTarget(originalCond));</span>
+<span class="fc" id="L154">	        Expression ed = paren;</span>
+<span class="fc" id="L155">	        InfixExpression newCond = null;</span>
+	
+<span class="fc" id="L157">	        List&lt;String&gt; nombres = new ArrayList&lt;String&gt;();</span>
+<span class="fc bfc" id="L158" title="All 2 branches covered.">	        if (nameB != null) {</span>
+<span class="fc" id="L159">	        	nombres.add(nameB);</span>
+	        }
+<span class="fc bfc" id="L161" title="All 2 branches covered.">	        if (namesF != null) {</span>
+<span class="fc bfc" id="L162" title="All 2 branches covered.">	        	for (String s: namesF) {</span>
+<span class="fc" id="L163">	        		nombres.add(s);        		</span>
+<span class="fc" id="L164">	        	} </span>
+	        }
+	
+<span class="pc bpc" id="L167" title="1 of 2 branches missed.">	        if (nombres.size() &gt; 0) {</span>
+<span class="fc" id="L168">	        	int i = nombres.size();</span>
+<span class="fc bfc" id="L169" title="All 2 branches covered.">	        	while (i &gt; 0) {</span>
+<span class="fc" id="L170">	        		i--;</span>
+<span class="fc" id="L171">	        		SimpleName sn = ast.newSimpleName(nombres.get(i));</span>
+<span class="fc" id="L172">	        		newCond = ast.newInfixExpression();</span>
+<span class="fc" id="L173">	        		newCond.setRightOperand(ed);</span>
+<span class="fc" id="L174">	        		newCond.setLeftOperand(sn);</span>
+<span class="fc" id="L175">	        		newCond.setOperator(InfixExpression.Operator.CONDITIONAL_AND);</span>
+<span class="fc" id="L176">	        		ed = newCond;</span>
+<span class="fc" id="L177">	        	}</span>
+<span class="fc" id="L178">	        	rewrite.replace(originalCond, newCond, null);</span>
+	        }
+      }
+      
+      // Parte del CONTINUE ---------------------------------------------
+<span class="fc bfc" id="L183" title="All 2 branches covered.">      if (continueName != null) {</span>
+          // crear: boolean nombre = true;
+<span class="fc" id="L185">          VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();</span>
+<span class="fc" id="L186">          frag.setName(ast.newSimpleName(continueName));</span>
+<span class="fc" id="L187">          frag.setInitializer(ast.newBooleanLiteral(true));</span>
+<span class="fc" id="L188">          VariableDeclarationStatement decl = ast.newVariableDeclarationStatement(frag);</span>
+<span class="fc" id="L189">          decl.setType(ast.newPrimitiveType(PrimitiveType.BOOLEAN));</span>
+
+          // insertar declaracion despues del loop 
+<span class="fc" id="L192">          insertDeclarationFirst(loopNode, decl);</span>
+      }
+
+<span class="fc bfc" id="L195" title="All 2 branches covered.">      if (contNamesF != null) {</span>
+          // crear: boolean nombre = true;
+          //VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();
+<span class="fc bfc" id="L198" title="All 2 branches covered.">          for (String name : contNamesF) {</span>
+<span class="fc" id="L199">              VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();</span>
+<span class="fc" id="L200">              frag.setName(ast.newSimpleName(name));</span>
+<span class="fc" id="L201">              frag.setInitializer(ast.newBooleanLiteral(true));</span>
+<span class="fc" id="L202">              VariableDeclarationStatement decl = ast.newVariableDeclarationStatement(frag);</span>
+<span class="fc" id="L203">              decl.setType(ast.newPrimitiveType(PrimitiveType.BOOLEAN));</span>
+
+              // insertar declaracion antes del loop o envolver en Block si el parent no es Block
+<span class="fc" id="L206">              insertDeclarationFirst(loopNode, decl);</span>
+<span class="fc" id="L207">          }</span>
+      }
+<span class="fc" id="L209">  }</span>
+
+  private void insertDeclarationFirst(Statement loopNode, VariableDeclarationStatement decl) {
+<span class="fc" id="L212">      ASTNode body = getBody(loopNode);</span>
+
+<span class="pc bpc" id="L214" title="1 of 2 branches missed.">      if (body != null) {</span>
+          // Caso 1: el cuerpo ya es un bloque { ... }
+<span class="fc" id="L216">          ListRewrite lr = rewrite.getListRewrite(body, Block.STATEMENTS_PROPERTY);</span>
+<span class="fc" id="L217">          lr.insertFirst(decl, null);</span>
+      } 
+<span class="fc" id="L219">  }</span>
+
+  @SuppressWarnings(&quot;unchecked&quot;)
+private void insertDeclarationBefore(Statement loopNode, VariableDeclarationStatement decl) {
+<span class="fc" id="L223">	    AST ast = loopNode.getAST();</span>
+<span class="fc" id="L224">	    ASTNode parent = loopNode.getParent();</span>
+
+<span class="fc bfc" id="L226" title="All 2 branches covered.">	    if (parent instanceof Block) {</span>
+<span class="fc" id="L227">	        ListRewrite listRewrite = rewrite.getListRewrite(parent, Block.STATEMENTS_PROPERTY);</span>
+<span class="fc" id="L228">	        listRewrite.insertBefore(decl, loopNode, null);</span>
+<span class="fc" id="L229">	    } else {</span>
+	        // Creamos el bloque que envolverá al if sin llaves
+<span class="fc" id="L231">	        Block newBlock = ast.newBlock();</span>
+	        
+	        // 1. Agregamos la declaración directamente
+<span class="fc" id="L234">	        newBlock.statements().add(decl); </span>
+	        
+	        // 2. IMPORTANTE: Usamos move target para no perder el rastro del loop
+	        // Esto permite que el rewriter sepa que el loopNode &quot;original&quot; 
+	        // ahora vive dentro de este bloque.
+<span class="fc" id="L239">	        Statement moveTarget = (Statement) rewrite.createMoveTarget(loopNode);</span>
+<span class="fc" id="L240">	        newBlock.statements().add(moveTarget);</span>
+	        
+	        // 3. Reemplazamos el bucle original (que estaba bajo el 'if') por el nuevo bloque
+<span class="fc" id="L243">	        rewrite.replace(loopNode, newBlock, null);</span>
+	    }
+<span class="fc" id="L245">	}  </span>
+  
+  
+  public Block getBody(Statement node) {
+<span class="fc" id="L249">  	Block block = null;</span>
+<span class="pc bpc" id="L250" title="1 of 4 branches missed.">  	if (node instanceof WhileStatement ws &amp;&amp; ws.getBody() instanceof Block)</span>
+<span class="fc" id="L251">  		block = (Block) ws.getBody();</span>
+<span class="pc bpc" id="L252" title="1 of 4 branches missed.">  	if (node instanceof DoStatement ds &amp;&amp; ds.getBody() instanceof Block)</span>
+<span class="fc" id="L253">  		block = (Block) ds.getBody();</span>
+
+<span class="fc" id="L255">  	return block;</span>
+  }
+  
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

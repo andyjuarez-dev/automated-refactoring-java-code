@@ -1,0 +1,450 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ForEachToWhileVisitor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">refactoring-core</a> &gt; <a href="index.source.html" class="el_package">uma.master.isia.refactoring</a> &gt; <span class="el_source">ForEachToWhileVisitor.java</span></div><h1>ForEachToWhileVisitor.java</h1><pre class="source lang-java linenums">package uma.master.isia.refactoring;
+
+import org.eclipse.jdt.core.dom.EnhancedForStatement;
+import org.eclipse.jdt.core.dom.MethodInvocation;
+import org.eclipse.jdt.core.dom.Name;
+import org.eclipse.jdt.core.dom.ParameterizedType;
+import org.eclipse.jdt.core.dom.PostfixExpression;
+import org.eclipse.jdt.core.dom.PrimitiveType;
+import org.eclipse.jdt.core.dom.SimpleName;
+import org.eclipse.jdt.core.dom.Statement;
+import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
+import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
+import org.eclipse.jdt.core.dom.WhileStatement;
+import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
+import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
+import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.FieldAccess;
+import org.eclipse.jdt.core.dom.ITypeBinding;
+import org.eclipse.jdt.core.dom.ImportDeclaration;
+import org.eclipse.jdt.core.dom.InfixExpression;
+import java.util.Set;
+import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.ASTNode;
+import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.ArrayAccess;
+import org.eclipse.jdt.core.dom.Block;
+import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.Type;
+import org.eclipse.jdt.core.dom.*;
+
+public class ForEachToWhileVisitor extends ASTVisitor {
+
+<span class="fc" id="L33">	private enum ForEachKind {</span>
+<span class="fc" id="L34">	    PRIMITIVE_ARRAY,</span>
+<span class="fc" id="L35">	    REFERENCE_ARRAY,</span>
+<span class="fc" id="L36">	    ITERABLE,</span>
+<span class="fc" id="L37">	    UNKNOWN</span>
+	}
+	
+    private final Set&lt;EnhancedForStatement&gt; markedFors;
+    private final ASTRewrite rewrite;
+    private final CompilationUnit cu;
+<span class="fc" id="L43">    private final Set&lt;String&gt; usedNames = new java.util.HashSet&lt;&gt;();</span>
+
+<span class="fc" id="L45">    private boolean needsIteratorImport = false;</span>
+<span class="fc" id="L46">    private boolean needsArraysImport = false;</span>
+
+<span class="fc" id="L48">    public ForEachToWhileVisitor(Set&lt;EnhancedForStatement&gt; markedFors, ASTRewrite rewrite, CompilationUnit cu) {</span>
+<span class="fc" id="L49">        this.markedFors = markedFors;</span>
+<span class="fc" id="L50">        this.rewrite = rewrite;</span>
+<span class="fc" id="L51">        this.cu = cu;</span>
+<span class="fc" id="L52">    }</span>
+
+	@Override
+	public boolean visit(EnhancedForStatement node) {
+<span class="fc bfc" id="L56" title="All 2 branches covered.">    	if (node.getProperty(&quot;change&quot;) == null)</span>
+<span class="fc" id="L57">    		return true;</span>
+		
+<span class="pc bpc" id="L59" title="1 of 2 branches missed.">	    if (!markedFors.contains(node)) return true;</span>
+
+<span class="fc" id="L61">	    AST ast = node.getAST();</span>
+<span class="fc" id="L62">	    ForEachKind kind = classify(node);</span>
+
+	    /*
+	    if (kind == ForEachKind.PRIMITIVE_ARRAY) {
+	    	System.out.println(&quot;\n---------------- ARRAY PRIMITIVO --------------------------------\n&quot; + node);
+	    }
+	    else if (kind == ForEachKind.REFERENCE_ARRAY) {
+	    	System.out.println(&quot;\n---------------- ARRAY DE OBJETOS --------------------------------\n&quot; + node);
+	    }
+	    else if (kind == ForEachKind.ITERABLE) {
+	    	System.out.println(&quot;\n---------------- ITERABLE --------------------------------\n&quot; + node);
+	    }
+	    else 
+	    	System.out.println(&quot;\n---------------- UNKNOWN --------------------------------\n&quot; + node);
+	    */
+	    
+<span class="fc bfc" id="L78" title="All 2 branches covered.">	    if (kind == ForEachKind.UNKNOWN)</span>
+<span class="fc" id="L79">	    	return true;</span>
+	    
+<span class="fc bfc" id="L81" title="All 2 branches covered.">	    ConversionResult result = switch (kind) {</span>
+<span class="fc" id="L82">	        case PRIMITIVE_ARRAY -&gt; convertPrimitiveArray(node, ast);</span>
+<span class="fc" id="L83">	        default -&gt; convertWithIterator(node, ast, kind);</span>
+	    };
+
+<span class="fc" id="L86">	    insertReplacement(node, result.preStatement, result.whileStmt);</span>
+<span class="fc" id="L87">	    return false;</span>
+	}
+
+	private ForEachKind classify(EnhancedForStatement node) {
+<span class="fc" id="L91">	    ITypeBinding binding = node.getExpression().resolveTypeBinding();</span>
+<span class="fc bfc" id="L92" title="All 2 branches covered.">	    if (binding == null)</span>
+<span class="fc" id="L93">	    	return ForEachKind.UNKNOWN;</span>
+	    
+<span class="pc bpc" id="L95" title="1 of 4 branches missed.">	    if (binding != null &amp;&amp; binding.isArray()) {</span>
+<span class="fc bfc" id="L96" title="All 2 branches covered.">	        return binding.getElementType().isPrimitive()</span>
+<span class="fc" id="L97">	                ? ForEachKind.PRIMITIVE_ARRAY</span>
+<span class="fc" id="L98">	                : ForEachKind.REFERENCE_ARRAY;</span>
+	    }
+<span class="fc" id="L100">	    return ForEachKind.ITERABLE;</span>
+	}
+	
+	private static class ConversionResult {
+	    final Statement preStatement;
+	    final WhileStatement whileStmt;
+
+<span class="fc" id="L107">	    ConversionResult(Statement pre, WhileStatement w) {</span>
+<span class="fc" id="L108">	        this.preStatement = pre;</span>
+<span class="fc" id="L109">	        this.whileStmt = w;</span>
+<span class="fc" id="L110">	    }</span>
+	}
+
+	private ConversionResult convertPrimitiveArray(EnhancedForStatement node, AST ast) {
+<span class="fc" id="L114">	    String idxName = uniqueName(&quot;idx&quot;, node);</span>
+
+<span class="fc" id="L116">	    VariableDeclarationFragment idxFrag = ast.newVariableDeclarationFragment();</span>
+<span class="fc" id="L117">	    idxFrag.setName(ast.newSimpleName(idxName));</span>
+<span class="fc" id="L118">	    idxFrag.setInitializer(ast.newNumberLiteral(&quot;0&quot;));</span>
+
+<span class="fc" id="L120">	    VariableDeclarationStatement idxDecl = ast.newVariableDeclarationStatement(idxFrag);</span>
+<span class="fc" id="L121">	    idxDecl.setType(ast.newPrimitiveType(PrimitiveType.INT));</span>
+
+<span class="fc" id="L123">	    InfixExpression cond = ast.newInfixExpression();</span>
+<span class="fc" id="L124">	    cond.setOperator(InfixExpression.Operator.LESS);</span>
+<span class="fc" id="L125">	    cond.setLeftOperand(ast.newSimpleName(idxName));</span>
+<span class="fc" id="L126">	    cond.setRightOperand(arrayLengthExpr(ast, node.getExpression()));</span>
+
+<span class="fc" id="L128">	    WhileStatement whileStmt = ast.newWhileStatement();</span>
+<span class="fc" id="L129">	    whileStmt.setExpression(cond);</span>
+
+<span class="fc" id="L131">	    Block body = ast.newBlock();</span>
+<span class="fc" id="L132">	    addIndexedElementDeclaration(node, ast, body, idxName);</span>
+<span class="fc" id="L133">	    appendBody(ast, body, node.getBody());</span>
+<span class="fc" id="L134">	    addIndexIncrement(ast, body, idxName);</span>
+
+<span class="fc" id="L136">	    whileStmt.setBody(body);</span>
+<span class="fc" id="L137">	    return new ConversionResult(idxDecl, whileStmt);</span>
+	}
+
+	private ConversionResult convertWithIterator(
+	        EnhancedForStatement node, AST ast, ForEachKind kind) {
+
+<span class="fc" id="L143">	    needsIteratorImport = true;</span>
+<span class="fc bfc" id="L144" title="All 2 branches covered.">	    if (kind == ForEachKind.REFERENCE_ARRAY) {</span>
+<span class="fc" id="L145">	        needsArraysImport = true;</span>
+	    }
+
+<span class="fc" id="L148">	    String itName = uniqueName(&quot;it&quot;, node);</span>
+<span class="fc" id="L149">	    VariableDeclarationStatement iterDecl =</span>
+<span class="fc" id="L150">	            buildIteratorDeclaration(node, ast, itName, kind);</span>
+
+<span class="fc" id="L152">	    WhileStatement whileStmt = ast.newWhileStatement();</span>
+<span class="fc" id="L153">	    whileStmt.setExpression(buildHasNext(ast, itName));</span>
+
+<span class="fc" id="L155">	    Block body = ast.newBlock();</span>
+<span class="fc" id="L156">	    addIteratorElementDeclaration(node, ast, body, itName);</span>
+<span class="fc" id="L157">	    appendBody(ast, body, node.getBody());</span>
+<span class="fc" id="L158">	    whileStmt.setBody(body);</span>
+
+<span class="fc" id="L160">	    return new ConversionResult(iterDecl, whileStmt);</span>
+	}
+
+	@SuppressWarnings(&quot;unchecked&quot;)
+	private VariableDeclarationStatement buildIteratorDeclaration(
+	        EnhancedForStatement node, AST ast, String itName, ForEachKind kind) {
+
+<span class="fc" id="L167">	    VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();</span>
+<span class="fc" id="L168">	    frag.setName(ast.newSimpleName(itName));</span>
+<span class="fc" id="L169">	    frag.setInitializer(buildIteratorInit(node, ast, kind));</span>
+
+<span class="fc" id="L171">	    VariableDeclarationStatement decl = ast.newVariableDeclarationStatement(frag);</span>
+
+<span class="fc" id="L173">	    Type elemType = (Type) ASTNode.copySubtree(ast, node.getParameter().getType());</span>
+<span class="pc bpc" id="L174" title="1 of 2 branches missed.">	    if (elemType.isPrimitiveType()) {</span>
+<span class="nc" id="L175">	        elemType = boxedType(ast, (PrimitiveType) elemType);</span>
+	    }
+
+<span class="fc" id="L178">	    ParameterizedType iterType =</span>
+<span class="fc" id="L179">	            ast.newParameterizedType(ast.newSimpleType(ast.newSimpleName(&quot;Iterator&quot;)));</span>
+<span class="fc" id="L180">	    iterType.typeArguments().add(elemType);</span>
+<span class="fc" id="L181">	    decl.setType(iterType);</span>
+
+<span class="fc" id="L183">	    return decl;</span>
+	}
+	
+	@SuppressWarnings(&quot;unchecked&quot;)
+	private Expression buildIteratorInit(
+	        EnhancedForStatement node, AST ast, ForEachKind kind) {
+
+<span class="fc" id="L190">	    Expression exprCopy =</span>
+<span class="fc" id="L191">	            (Expression) ASTNode.copySubtree(ast, node.getExpression());</span>
+
+	    MethodInvocation iteratorCall;
+
+<span class="fc bfc" id="L195" title="All 2 branches covered.">	    if (kind == ForEachKind.REFERENCE_ARRAY) {</span>
+<span class="fc" id="L196">	        MethodInvocation stream = ast.newMethodInvocation();</span>
+<span class="fc" id="L197">	        stream.setExpression(ast.newSimpleName(&quot;Arrays&quot;));</span>
+<span class="fc" id="L198">	        stream.setName(ast.newSimpleName(&quot;stream&quot;));</span>
+<span class="fc" id="L199">	        stream.arguments().add(exprCopy);</span>
+
+<span class="fc" id="L201">	        iteratorCall = ast.newMethodInvocation();</span>
+<span class="fc" id="L202">	        iteratorCall.setExpression(stream);</span>
+<span class="fc" id="L203">	        iteratorCall.setName(ast.newSimpleName(&quot;iterator&quot;));</span>
+<span class="fc" id="L204">	    }</span>
+	    else {
+<span class="fc" id="L206">	        iteratorCall = ast.newMethodInvocation();</span>
+<span class="fc" id="L207">	        iteratorCall.setExpression(exprCopy);</span>
+<span class="fc" id="L208">	        iteratorCall.setName(ast.newSimpleName(&quot;iterator&quot;));</span>
+	    }
+
+	    // ===== Tipo T del foreach =====
+<span class="fc" id="L212">	    Type elementType = node.getParameter().getType();</span>
+
+	    // Construimos Iterator&lt;T&gt;
+<span class="fc" id="L215">	    ParameterizedType iteratorType = ast.newParameterizedType(</span>
+<span class="fc" id="L216">	            ast.newSimpleType(ast.newSimpleName(&quot;Iterator&quot;))</span>
+	    );
+
+<span class="fc" id="L219">	    iteratorType.typeArguments().add(</span>
+<span class="fc" id="L220">	            (Type) ASTNode.copySubtree(ast, elementType)</span>
+	    );
+
+	    // Cast a Iterator&lt;T&gt;
+<span class="fc" id="L224">	    CastExpression castExpr = ast.newCastExpression();</span>
+<span class="fc" id="L225">	    castExpr.setType(iteratorType);</span>
+<span class="fc" id="L226">	    castExpr.setExpression(iteratorCall);</span>
+
+<span class="fc" id="L228">	    return castExpr;</span>
+	}
+	
+
+	@SuppressWarnings(&quot;unchecked&quot;)
+	private void addIteratorElementDeclaration(
+	        EnhancedForStatement node,
+	        AST ast,
+	        Block body,
+	        String itName) {
+
+	    // ===== fragment =====
+<span class="fc" id="L240">	    VariableDeclarationFragment elemFrag = ast.newVariableDeclarationFragment();</span>
+
+	    // nombre del elemento (ej: e)
+<span class="fc" id="L243">	    elemFrag.setName(</span>
+<span class="fc" id="L244">	            (SimpleName) ASTNode.copySubtree(ast, node.getParameter().getName())</span>
+	    );
+
+	    // ===== it.next() =====
+<span class="fc" id="L248">	    MethodInvocation nextCall = ast.newMethodInvocation();</span>
+<span class="fc" id="L249">	    nextCall.setExpression(ast.newSimpleName(itName));</span>
+<span class="fc" id="L250">	    nextCall.setName(ast.newSimpleName(&quot;next&quot;));</span>
+
+<span class="fc" id="L252">	    Expression initializer = nextCall;</span>
+
+	    // ===== Tipo del foreach (T) =====
+<span class="fc" id="L255">	    Type elementType = node.getParameter().getType();</span>
+
+	    // Si el tipo NO es simple o puede venir de raw types → agregamos cast
+	    // (esto evita errores cuando el iterator no está parametrizado)
+<span class="fc" id="L259">	    CastExpression castExpr = ast.newCastExpression();</span>
+<span class="fc" id="L260">	    castExpr.setType((Type) ASTNode.copySubtree(ast, elementType));</span>
+<span class="fc" id="L261">	    castExpr.setExpression(nextCall);</span>
+
+<span class="fc" id="L263">	    initializer = castExpr;</span>
+
+<span class="fc" id="L265">	    elemFrag.setInitializer(initializer);</span>
+
+	    // ===== Declaración final =====
+<span class="fc" id="L268">	    VariableDeclarationStatement elemDecl =</span>
+<span class="fc" id="L269">	            ast.newVariableDeclarationStatement(elemFrag);</span>
+
+<span class="fc" id="L271">	    elemDecl.setType(</span>
+<span class="fc" id="L272">	            (Type) ASTNode.copySubtree(ast, elementType)</span>
+	    );
+
+<span class="fc" id="L275">	    body.statements().add(elemDecl);</span>
+<span class="fc" id="L276">	}</span>
+
+	
+	@SuppressWarnings(&quot;unchecked&quot;)
+	private void insertReplacement(
+	        EnhancedForStatement node,
+	        Statement pre,
+	        WhileStatement replacement) {
+
+<span class="fc" id="L285">	    AST ast = node.getAST();</span>
+<span class="fc" id="L286">	    ASTNode parent = node.getParent();</span>
+
+<span class="fc bfc" id="L288" title="All 2 branches covered.">	    if (parent instanceof Block) {</span>
+<span class="fc" id="L289">	        ListRewrite lr =</span>
+<span class="fc" id="L290">	                rewrite.getListRewrite(parent, Block.STATEMENTS_PROPERTY);</span>
+<span class="fc" id="L291">	        lr.insertBefore(pre, node, null);</span>
+<span class="fc" id="L292">	        rewrite.replace(node, replacement, null);</span>
+<span class="fc" id="L293">	    } else {</span>
+<span class="fc" id="L294">	        Block wrapper = ast.newBlock();</span>
+<span class="fc" id="L295">	        wrapper.statements().add(pre);</span>
+<span class="fc" id="L296">	        wrapper.statements().add(replacement);</span>
+<span class="fc" id="L297">	        rewrite.replace(node, wrapper, null);</span>
+	    }
+<span class="fc" id="L299">	}</span>
+	
+
+    private String uniqueName(String base, ASTNode context) {
+        // Recolecta nombres ya presentes en el bloque original
+<span class="fc" id="L304">        usedNames.addAll(collectNames(context));</span>
+
+<span class="fc" id="L306">        String candidate = base;</span>
+<span class="fc" id="L307">        int i = 1;</span>
+<span class="fc bfc" id="L308" title="All 2 branches covered.">        while (usedNames.contains(candidate)) {</span>
+<span class="fc" id="L309">            candidate = base + i;</span>
+<span class="fc" id="L310">            i++;</span>
+        }
+<span class="fc" id="L312">        usedNames.add(candidate); // &lt;-- ahora registramos el nuevo</span>
+<span class="fc" id="L313">        return candidate;</span>
+    }
+
+   // @SuppressWarnings(&quot;unchecked&quot;)
+    private Set&lt;String&gt; collectNames(ASTNode context) {
+<span class="fc" id="L318">        Set&lt;String&gt; names = new java.util.HashSet&lt;&gt;();</span>
+        // Busco el bloque contenedor
+<span class="fc" id="L320">        ASTNode block = context;</span>
+<span class="pc bpc" id="L321" title="1 of 4 branches missed.">        while (block != null &amp;&amp; !(block instanceof Block)) {</span>
+<span class="fc" id="L322">            block = block.getParent();</span>
+        }
+<span class="pc bpc" id="L324" title="1 of 2 branches missed.">        if (block instanceof Block b) {</span>
+<span class="fc bfc" id="L325" title="All 2 branches covered.">            for (Object o : b.statements()) {</span>
+<span class="fc bfc" id="L326" title="All 2 branches covered.">                if (o instanceof VariableDeclarationStatement vds) {</span>
+<span class="fc bfc" id="L327" title="All 2 branches covered.">                    for (Object f : vds.fragments()) {</span>
+<span class="fc" id="L328">                        names.add(((VariableDeclarationFragment) f).getName().getIdentifier());</span>
+<span class="fc" id="L329">                    }</span>
+                }
+<span class="fc" id="L331">            }</span>
+        }
+<span class="fc" id="L333">        return names;</span>
+    }
+    
+    
+    private Expression arrayLengthExpr(AST ast, Expression arrayExpr) {
+<span class="fc bfc" id="L338" title="All 2 branches covered.">        if (arrayExpr instanceof Name name) {</span>
+<span class="fc" id="L339">            return ast.newQualifiedName((Name) ASTNode.copySubtree(ast, name), ast.newSimpleName(&quot;length&quot;));</span>
+        } else {
+<span class="fc" id="L341">            FieldAccess fa = ast.newFieldAccess();</span>
+<span class="fc" id="L342">            fa.setExpression((Expression) ASTNode.copySubtree(ast, arrayExpr));</span>
+<span class="fc" id="L343">            fa.setName(ast.newSimpleName(&quot;length&quot;));</span>
+<span class="fc" id="L344">            return fa;</span>
+        }
+    }
+
+    private Type boxedType(AST ast, PrimitiveType prim) {
+        String wrapper;
+<span class="nc" id="L350">        PrimitiveType.Code code = prim.getPrimitiveTypeCode();</span>
+<span class="nc bnc" id="L351" title="All 2 branches missed.">        if (code == PrimitiveType.BOOLEAN) wrapper = &quot;Boolean&quot;;</span>
+<span class="nc bnc" id="L352" title="All 2 branches missed.">        else if (code == PrimitiveType.BYTE) wrapper = &quot;Byte&quot;;</span>
+<span class="nc bnc" id="L353" title="All 2 branches missed.">        else if (code == PrimitiveType.SHORT) wrapper = &quot;Short&quot;;</span>
+<span class="nc bnc" id="L354" title="All 2 branches missed.">        else if (code == PrimitiveType.CHAR) wrapper = &quot;Character&quot;;</span>
+<span class="nc bnc" id="L355" title="All 2 branches missed.">        else if (code == PrimitiveType.INT) wrapper = &quot;Integer&quot;;</span>
+<span class="nc bnc" id="L356" title="All 2 branches missed.">        else if (code == PrimitiveType.LONG) wrapper = &quot;Long&quot;;</span>
+<span class="nc bnc" id="L357" title="All 2 branches missed.">        else if (code == PrimitiveType.FLOAT) wrapper = &quot;Float&quot;;</span>
+<span class="nc" id="L358">        else wrapper = &quot;Double&quot;;</span>
+<span class="nc" id="L359">        return ast.newSimpleType(ast.newSimpleName(wrapper));</span>
+    }
+	
+    @SuppressWarnings(&quot;unchecked&quot;)
+	private void appendBody(AST ast, Block dest, Statement originalBody) {
+<span class="pc bpc" id="L364" title="1 of 2 branches missed.">        if (originalBody instanceof Block b) {</span>
+<span class="fc bfc" id="L365" title="All 2 branches covered.">            for (Object s : b.statements()) {</span>
+<span class="fc" id="L366">                dest.statements().add(ASTNode.copySubtree(ast, (ASTNode) s));</span>
+<span class="fc" id="L367">            }</span>
+        } else {
+<span class="nc" id="L369">            dest.statements().add(ASTNode.copySubtree(ast, originalBody));</span>
+        }
+<span class="fc" id="L371">    }</span>
+
+    private boolean hasImport(String fqn) {
+<span class="fc bfc" id="L374" title="All 2 branches covered.">        for (Object o : cu.imports()) {</span>
+<span class="fc" id="L375">            ImportDeclaration id = (ImportDeclaration) o;</span>
+<span class="pc bpc" id="L376" title="2 of 4 branches missed.">            if (!id.isOnDemand() &amp;&amp; id.getName().getFullyQualifiedName().equals(fqn)) return true;</span>
+<span class="fc" id="L377">        }</span>
+<span class="fc" id="L378">        return false;</span>
+    }
+	
+    @SuppressWarnings(&quot;unchecked&quot;)
+    private void addIndexedElementDeclaration(
+            EnhancedForStatement node,
+            AST ast,
+            Block body,
+            String idxName) {
+
+        // T e = array[idx];
+<span class="fc" id="L389">        VariableDeclarationFragment elemFrag = ast.newVariableDeclarationFragment();</span>
+<span class="fc" id="L390">        elemFrag.setName(</span>
+<span class="fc" id="L391">                (SimpleName) ASTNode.copySubtree(ast, node.getParameter().getName())</span>
+        );
+
+<span class="fc" id="L394">        ArrayAccess access = ast.newArrayAccess();</span>
+<span class="fc" id="L395">        access.setArray(</span>
+<span class="fc" id="L396">                (Expression) ASTNode.copySubtree(ast, node.getExpression())</span>
+        );
+<span class="fc" id="L398">        access.setIndex(ast.newSimpleName(idxName));</span>
+
+<span class="fc" id="L400">        elemFrag.setInitializer(access);</span>
+
+<span class="fc" id="L402">        VariableDeclarationStatement elemDecl =</span>
+<span class="fc" id="L403">                ast.newVariableDeclarationStatement(elemFrag);</span>
+
+<span class="fc" id="L405">        elemDecl.setType(</span>
+<span class="fc" id="L406">                (Type) ASTNode.copySubtree(ast, node.getParameter().getType())</span>
+        );
+
+<span class="fc" id="L409">        body.statements().add(elemDecl);</span>
+<span class="fc" id="L410">    }</span>
+
+    @SuppressWarnings(&quot;unchecked&quot;)
+	private void addIndexIncrement(AST ast, Block body, String idxName) {
+<span class="fc" id="L414">        PostfixExpression inc = ast.newPostfixExpression();</span>
+<span class="fc" id="L415">        inc.setOperator(PostfixExpression.Operator.INCREMENT);</span>
+<span class="fc" id="L416">        inc.setOperand(ast.newSimpleName(idxName));</span>
+
+<span class="fc" id="L418">        body.statements().add(ast.newExpressionStatement(inc));</span>
+<span class="fc" id="L419">    }</span>
+    
+    private Expression buildHasNext(AST ast, String itName) {
+<span class="fc" id="L422">        MethodInvocation hasNext = ast.newMethodInvocation();</span>
+<span class="fc" id="L423">        hasNext.setExpression(ast.newSimpleName(itName));</span>
+<span class="fc" id="L424">        hasNext.setName(ast.newSimpleName(&quot;hasNext&quot;));</span>
+<span class="fc" id="L425">        return hasNext;</span>
+    }
+
+    private void addMissingImports(CompilationUnit cu) {
+<span class="fc" id="L429">        AST ast = cu.getAST();</span>
+<span class="fc" id="L430">        ListRewrite lr = rewrite.getListRewrite(cu, CompilationUnit.IMPORTS_PROPERTY);</span>
+
+<span class="pc bpc" id="L432" title="1 of 4 branches missed.">        if (needsIteratorImport &amp;&amp; !hasImport(&quot;java.util.Iterator&quot;)) {</span>
+<span class="fc" id="L433">            ImportDeclaration imp = ast.newImportDeclaration();</span>
+<span class="fc" id="L434">            imp.setName(ast.newName(&quot;java.util.Iterator&quot;));</span>
+<span class="fc" id="L435">            lr.insertLast(imp, null);</span>
+        }
+
+<span class="pc bpc" id="L438" title="1 of 4 branches missed.">        if (needsArraysImport &amp;&amp; !hasImport(&quot;java.util.Arrays&quot;)) {</span>
+<span class="fc" id="L439">            ImportDeclaration imp = ast.newImportDeclaration();</span>
+<span class="fc" id="L440">            imp.setName(ast.newName(&quot;java.util.Arrays&quot;));</span>
+<span class="fc" id="L441">            lr.insertLast(imp, null);</span>
+        }
+<span class="fc" id="L443">    }</span>
+
+    @Override
+    public void endVisit(CompilationUnit node) {
+<span class="fc" id="L447">        addMissingImports(node);</span>
+<span class="fc" id="L448">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

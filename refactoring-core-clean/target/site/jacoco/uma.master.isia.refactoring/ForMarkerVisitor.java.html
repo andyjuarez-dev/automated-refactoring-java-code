@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ForMarkerVisitor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">refactoring-core</a> &gt; <a href="index.source.html" class="el_package">uma.master.isia.refactoring</a> &gt; <span class="el_source">ForMarkerVisitor.java</span></div><h1>ForMarkerVisitor.java</h1><pre class="source lang-java linenums">package uma.master.isia.refactoring;
+
+import java.util.HashSet;
+import java.util.Set;
+import org.eclipse.jdt.core.dom.ASTNode;
+import org.eclipse.jdt.core.dom.BreakStatement;
+import org.eclipse.jdt.core.dom.ContinueStatement;
+import org.eclipse.jdt.core.dom.DoStatement;
+import org.eclipse.jdt.core.dom.EnhancedForStatement;
+import org.eclipse.jdt.core.dom.ForStatement;
+import org.eclipse.jdt.core.dom.IfStatement;
+import org.eclipse.jdt.core.dom.Statement;
+import org.eclipse.jdt.core.dom.WhileStatement;
+import org.eclipse.jdt.core.dom.ASTVisitor;
+
+public class ForMarkerVisitor extends ASTVisitor {
+    private final Set&lt;ForStatement&gt; markedFors; 
+    
+<span class="fc" id="L19">    public ForMarkerVisitor() { </span>
+<span class="fc" id="L20">    	markedFors = new HashSet&lt;&gt;();</span>
+<span class="fc" id="L21">    }</span>
+
+    @Override
+    public boolean visit(BreakStatement node) {
+<span class="fc bfc" id="L25" title="All 2 branches covered.">    	if (node.getLabel() != null) // break etiquetado</span>
+<span class="fc" id="L26">    		return true;</span>
+
+<span class="fc" id="L28">        markForParent(node, &quot;hasBreak&quot;);</span>
+<span class="fc" id="L29">        return super.visit(node);</span>
+    }
+
+    @Override
+    public boolean visit(ContinueStatement node) {
+<span class="fc bfc" id="L34" title="All 2 branches covered.">    	if (node.getLabel() != null) // continue etiquetado</span>
+<span class="fc" id="L35">    		return true;</span>
+
+<span class="fc" id="L37">        markForParent(node, &quot;hasContinue&quot;);</span>
+<span class="fc" id="L38">        return super.visit(node);</span>
+    }
+
+    private void markForParent(Statement stmt, String property) {
+<span class="fc" id="L42">        ASTNode parent = stmt.getParent();</span>
+<span class="fc" id="L43">        boolean hasIf = false;</span>
+<span class="fc bfc" id="L44" title="All 10 branches covered.">        while    (parent != null &amp;&amp; </span>
+        		!(parent instanceof ForStatement) &amp;&amp; 
+        		!(parent instanceof EnhancedForStatement) &amp;&amp;
+        		!(parent instanceof WhileStatement) &amp;&amp; 
+        		!(parent instanceof DoStatement)) {
+<span class="fc bfc" id="L49" title="All 2 branches covered.">        	if (parent instanceof IfStatement) </span>
+<span class="fc" id="L50">        		hasIf = true;</span>
+<span class="fc" id="L51">            parent = parent.getParent();</span>
+        }
+<span class="fc bfc" id="L53" title="All 2 branches covered.">        if (!hasIf) {</span>
+//        	System.out.println(&quot;Es un break o continue degenerado&quot;);
+<span class="fc" id="L55">        	return;</span>
+        }
+<span class="fc bfc" id="L57" title="All 2 branches covered.">        if (parent instanceof ForStatement fs) {</span>
+<span class="fc" id="L58">            markedFors.add(fs);</span>
+<span class="fc" id="L59">            fs.setProperty(&quot;change&quot;, true); </span>
+<span class="fc" id="L60">            fs.setProperty(property, true);</span>
+        }
+<span class="fc" id="L62">    }</span>
+
+    public Set&lt;ForStatement&gt; getMarkedFors() {
+<span class="fc" id="L65">        return markedFors;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ForToWhileVisitor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">refactoring-core</a> &gt; <a href="index.source.html" class="el_package">uma.master.isia.refactoring</a> &gt; <span class="el_source">ForToWhileVisitor.java</span></div><h1>ForToWhileVisitor.java</h1><pre class="source lang-java linenums">package uma.master.isia.refactoring;
+
+import java.util.List;
+import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.ASTNode;
+import org.eclipse.jdt.core.dom.Block;
+import org.eclipse.jdt.core.dom.ExpressionStatement;
+import org.eclipse.jdt.core.dom.ForStatement;
+import org.eclipse.jdt.core.dom.LabeledStatement;
+import org.eclipse.jdt.core.dom.Statement;
+import org.eclipse.jdt.core.dom.VariableDeclarationExpression;
+import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
+import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
+import org.eclipse.jdt.core.dom.WhileStatement;
+import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
+import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
+import org.eclipse.jdt.core.dom.Expression;
+
+public class ForToWhileVisitor extends ASTVisitor {
+
+	private final ASTRewrite rewriter;
+
+<span class="fc" id="L24">    public ForToWhileVisitor(ASTRewrite rewriter) {</span>
+<span class="fc" id="L25">        this.rewriter = rewriter;</span>
+<span class="fc" id="L26">    }</span>
+    
+    @SuppressWarnings(&quot;unchecked&quot;)    
+    @Override
+    public boolean visit(Block node) {
+<span class="fc" id="L31">		List&lt;Statement&gt; stmts = node.statements();</span>
+<span class="fc bfc" id="L32" title="All 2 branches covered.">        if (stmts.isEmpty()) return true;</span>
+
+<span class="fc" id="L34">        AST ast = node.getAST();</span>
+<span class="fc" id="L35">        ListRewrite lr = rewriter.getListRewrite(node, Block.STATEMENTS_PROPERTY);</span>
+        
+<span class="fc bfc" id="L37" title="All 2 branches covered.">        for (int i = stmts.size() - 1; i &gt;= 0; i--) {</span>
+<span class="fc" id="L38">            Statement stmt = stmts.get(i);</span>
+
+<span class="fc bfc" id="L40" title="All 4 branches covered.">            if (stmt instanceof ForStatement &amp;&amp; stmt.getProperty(&quot;change&quot;) != null) {</span>
+<span class="fc" id="L41">                ForStatement forStmt = (ForStatement) stmt;</span>
+<span class="fc" id="L42">                WhileStatement whileNode = ast.newWhileStatement();</span>
+                
+                // 1. Condición
+<span class="fc bfc" id="L45" title="All 2 branches covered.">                Expression cond = forStmt.getExpression() != null </span>
+<span class="fc" id="L46">                    ? (Expression) ASTNode.copySubtree(ast, forStmt.getExpression()) </span>
+<span class="fc" id="L47">                    : ast.newBooleanLiteral(true);</span>
+<span class="fc" id="L48">                whileNode.setExpression(cond);</span>
+
+                // 2. Cuerpo
+<span class="fc" id="L51">                Block whileBody = ast.newBlock();</span>
+<span class="fc" id="L52">                Statement movedBody = (Statement) rewriter.createMoveTarget(forStmt.getBody());</span>
+<span class="fc" id="L53">                whileBody.statements().add(movedBody);</span>
+
+                String data;
+<span class="fc bfc" id="L56" title="All 2 branches covered.">                if (forStmt.getProperty(&quot;hasBreak&quot;) != null)</span>
+<span class="fc" id="L57">                	data = &quot;hasBreak&quot;;</span>
+                else
+<span class="fc" id="L59">                	data = &quot;hasContinue&quot;;</span>
+                	
+<span class="fc bfc" id="L61" title="All 2 branches covered.">                for (Object updater : forStmt.updaters()) {</span>
+<span class="fc" id="L62">                    Expression expr = (Expression) ASTNode.copySubtree(ast, (Expression) updater);</span>
+<span class="fc" id="L63">                    ExpressionStatement updaterStmt = ast.newExpressionStatement(expr);</span>
+                    
+                    // Creamos la etiqueta como &quot;contenedor&quot; de la sentencia
+<span class="fc" id="L66">                    LabeledStatement labeled = ast.newLabeledStatement();</span>
+                    
+                    // El nombre de la etiqueta lleva la información (hasBreak o hasContinue)
+<span class="fc" id="L69">                    String labelName = &quot;MARK_&quot; + data; // Quedará MARK_hasBreak o MARK_hasContinue</span>
+<span class="fc" id="L70">                    labeled.setLabel(ast.newSimpleName(labelName));</span>
+                    
+                    // Metemos el i++ dentro de la etiqueta
+<span class="fc" id="L73">                    labeled.setBody(updaterStmt);</span>
+                    
+                    // Añadimos la etiqueta al bloque del while
+<span class="fc" id="L76">                    whileBody.statements().add(labeled);</span>
+<span class="fc" id="L77">                }</span>
+                
+<span class="fc" id="L79">                whileNode.setBody(whileBody);</span>
+
+                // 3. Reemplazo e Inicializadores
+<span class="fc bfc" id="L82" title="All 2 branches covered.">                if (forStmt.initializers().isEmpty()) {</span>
+<span class="fc" id="L83">                    lr.replace(stmt, whileNode, null);</span>
+                } else {
+<span class="fc" id="L85">                    Block replacementBlock = ast.newBlock();</span>
+<span class="fc bfc" id="L86" title="All 2 branches covered.">                    for (Object init : forStmt.initializers()) {</span>
+<span class="fc bfc" id="L87" title="All 2 branches covered.">                        if (init instanceof VariableDeclarationExpression) {</span>
+<span class="fc" id="L88">                            replacementBlock.statements().add(transformToStatement((VariableDeclarationExpression) init, ast));</span>
+<span class="pc bpc" id="L89" title="1 of 2 branches missed.">                        } else if (init instanceof Expression) {</span>
+<span class="fc" id="L90">                            replacementBlock.statements().add(ast.newExpressionStatement(</span>
+<span class="fc" id="L91">                                (Expression) ASTNode.copySubtree(ast, (Expression) init)));</span>
+                        }
+<span class="fc" id="L93">                    }</span>
+<span class="fc" id="L94">                    replacementBlock.statements().add(whileNode);</span>
+<span class="fc" id="L95">                    lr.replace(stmt, replacementBlock, null);</span>
+                }
+            }
+        }
+<span class="fc" id="L99">        return true;</span>
+    }
+    
+
+    // Método auxiliar para convertir 'int i=0' de expresión a sentencia
+    private VariableDeclarationStatement transformToStatement(VariableDeclarationExpression vde, AST ast) {
+<span class="fc" id="L105">        VariableDeclarationFragment oldFrag = (VariableDeclarationFragment) vde.fragments().get(0);</span>
+<span class="fc" id="L106">        VariableDeclarationFragment newFrag = ast.newVariableDeclarationFragment();</span>
+<span class="fc" id="L107">        newFrag.setName(ast.newSimpleName(oldFrag.getName().getIdentifier()));</span>
+<span class="pc bpc" id="L108" title="1 of 2 branches missed.">        if (oldFrag.getInitializer() != null) {</span>
+<span class="fc" id="L109">            newFrag.setInitializer((Expression) ASTNode.copySubtree(ast, oldFrag.getInitializer()));</span>
+        }
+<span class="fc" id="L111">        VariableDeclarationStatement vds = ast.newVariableDeclarationStatement(newFrag);</span>
+<span class="fc" id="L112">        vds.setType((org.eclipse.jdt.core.dom.Type) ASTNode.copySubtree(ast, vde.getType()));</span>
+<span class="fc" id="L113">        return vds;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

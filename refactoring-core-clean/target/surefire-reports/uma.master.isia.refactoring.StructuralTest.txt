@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: uma.master.isia.refactoring.StructuralTest
+-------------------------------------------------------------------------------
+Tests run: 46, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.369 s -- in uma.master.isia.refactoring.StructuralTest
