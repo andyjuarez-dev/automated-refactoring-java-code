@@ -24,15 +24,46 @@ import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
 import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
 
+/**
+ * Final rewriting phase responsible for materializing
+ * control-flow transformations previously annotated in the AST.
+ *
+ * <p>This visitor performs the following actions:</p>
+ * <ul>
+ *   <li>Replaces {@link BreakStatement} and
+ *       {@link ContinueStatement} nodes with assignments
+ *       to auxiliary boolean control variables.</li>
+ *   <li>Introduces the necessary boolean declarations.</li>
+ *   <li>Augments loop conditions to incorporate generated
+ *       control flags using logical conjunction (&&).</li>
+ *   <li>Ensures proper structural placement of new declarations
+ *       even when the loop is not originally enclosed in a block.</li>
+ * </ul>
+ *
+ * <p>This phase finalizes the transformation of rupture-based
+ * control flow into explicit boolean-guarded execution.</p>
+ */
 public class LoopRewriterFinal extends ASTVisitor {
 
 
     private ASTRewrite rewrite;
 
+    /**
+     * Creates the final rewriting visitor.
+     *  
+     * @param rewrite the ASTRewrite instance used to apply changes
+     */
     public LoopRewriterFinal(ASTRewrite rewrite) {
         this.rewrite = rewrite;
     }
     
+    /**
+     * Replaces a break statement with an assignment that
+     * sets the associated control flag to {@code false}.
+     *
+     * <p>The control variable name is retrieved from
+     * properties attached in earlier phases.</p>
+     */
     @Override
     public void endVisit(BreakStatement node) {
       	// Reemplaza el continue por la variable que sea = false
@@ -52,6 +83,13 @@ public class LoopRewriterFinal extends ASTVisitor {
           }
     }
 
+    /**
+     * Replaces a continue statement with an assignment that
+     * sets the associated control flag to {@code false}.
+     *
+     * <p>The control variable name is retrieved from
+     * properties attached in earlier phases.</p>
+     */
   @Override
   public void endVisit(ContinueStatement node) {
     	// Reemplaza el continue por la variable que sea = false
@@ -72,6 +110,9 @@ public class LoopRewriterFinal extends ASTVisitor {
   }
     
 
+  	/**
+     * Processes while loops that require flow rewriting. 
+     */
   @Override
   public boolean visit(WhileStatement node) {
 	  if (needsFlowRewrite(node))
@@ -87,13 +128,36 @@ public class LoopRewriterFinal extends ASTVisitor {
       return true;
   }
 
+  /**
+     * Determines whether a loop node requires transformation
+     * based on the presence of previously attached control-flow
+     * properties.
+   * 
+   * @param node the loop statement
+   * @return true if rewriting is required
+   */
   private boolean needsFlowRewrite(Statement node) {
 	    return node.getProperty("breakName") != null
 	        || node.getProperty("breakNamesFinally") != null
 	        || node.getProperty("continueName") != null
 	        || node.getProperty("continueNamesFinally") != null;
 	}
-  
+
+  /**
+     * Applies the full transformation to a loop:
+     *
+     * <ul>
+     *   <li>Declares required boolean control variables.</li>
+     *   <li>Augments the loop condition with control flags.</li>
+     *   <li>Inserts continue-related variables inside the loop body.</li>
+     * </ul>
+     *
+     * <p>This method assumes that rupture annotations have already
+     * been computed in previous phases.</p>
+     *
+   * 
+   * @param loopNode
+   */
   @SuppressWarnings("unchecked")
 private void processLoop3(Statement loopNode) {
 
@@ -208,6 +272,16 @@ private void processLoop3(Statement loopNode) {
       }
   }
 
+  /**
+     * Inserts a declaration as the first statement
+     * inside the loop body.
+     *
+     * <p>This is primarily used for continue-related
+     * control flags.</p>
+   * 
+   * @param loopNode
+   * @param decl
+   */
   private void insertDeclarationFirst(Statement loopNode, VariableDeclarationStatement decl) {
       ASTNode body = getBody(loopNode);
 
@@ -218,6 +292,15 @@ private void processLoop3(Statement loopNode) {
       } 
   }
 
+  /**
+     * Inserts a variable declaration before the loop.
+     * 
+     * <p>If the loop is not already enclosed in a block,
+     * a new block is created to preserve syntactic correctness.</p>
+   * 
+   * @param loopNode
+   * @param decl
+   */
   @SuppressWarnings("unchecked")
 private void insertDeclarationBefore(Statement loopNode, VariableDeclarationStatement decl) {
 	    AST ast = loopNode.getAST();
@@ -244,7 +327,12 @@ private void insertDeclarationBefore(Statement loopNode, VariableDeclarationStat
 	    }
 	}  
   
-  
+  /**
+     * Retrieves the block body of a loop if present.  
+     *  
+   * @param node a loop statement
+   * @return the loop body block or null
+   */
   public Block getBody(Statement node) {
   	Block block = null;
   	if (node instanceof WhileStatement ws && ws.getBody() instanceof Block)

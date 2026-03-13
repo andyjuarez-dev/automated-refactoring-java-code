@@ -28,8 +28,42 @@ import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.*;
 
+/**
+ * AST visitor responsible for transforming marked
+ * {@link EnhancedForStatement} nodes into semantically
+ * equivalent {@link WhileStatement} structures.
+ *
+ * <p>The transformation distinguishes between different iteration kinds:</p>
+ * <ul>
+ *   <li>Primitive arrays</li>
+ *   <li>Reference arrays</li>
+ *   <li>Iterable implementations</li>
+ * </ul>
+ *
+ * <p>Depending on the detected type, the visitor generates either:</p>
+ * <ul>
+ *   <li>An index-based while loop (for primitive arrays)</li>
+ *   <li>An {@code Iterator<T>}-based loop (for reference arrays and Iterables)</li>
+ * </ul>
+ *
+ * <p>The transformation preserves execution semantics by:</p>
+ * <ul>
+ *   <li>Maintaining evaluation order</li>
+ *   <li>Ensuring correct element typing (including boxing when required)</li>
+ *   <li>Introducing casts where necessary</li>
+ *   <li>Preventing variable name collisions</li>
+ *   <li>Adding required imports if missing</li>
+ * </ul>
+ *
+ * <p>Only {@code enhanced for} statements annotated with the
+ * property {@code "change"} are transformed.</p>
+ * 
+ */
 public class ForEachToWhileVisitor extends ASTVisitor {
 
+	/**
+     * Classification of the enhanced for iteration source. 
+	 */
 	private enum ForEachKind {
 	    PRIMITIVE_ARRAY,
 	    REFERENCE_ARRAY,
@@ -45,6 +79,14 @@ public class ForEachToWhileVisitor extends ASTVisitor {
     private boolean needsIteratorImport = false;
     private boolean needsArraysImport = false;
 
+    /**
+     * Creates a new visitor that converts marked enhanced-for
+     * statements using the provided rewrite context.
+     * 
+     * @param markedFors set of loops previously marked for conversion
+     * @param rewrite AST rewriter used to apply structural changes
+     * @param cu compilation unit used for import management
+     */
     public ForEachToWhileVisitor(Set<EnhancedForStatement> markedFors, ASTRewrite rewrite, CompilationUnit cu) {
         this.markedFors = markedFors;
         this.rewrite = rewrite;
@@ -60,20 +102,6 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 
 	    AST ast = node.getAST();
 	    ForEachKind kind = classify(node);
-
-	    /*
-	    if (kind == ForEachKind.PRIMITIVE_ARRAY) {
-	    	System.out.println("\n---------------- ARRAY PRIMITIVO --------------------------------\n" + node);
-	    }
-	    else if (kind == ForEachKind.REFERENCE_ARRAY) {
-	    	System.out.println("\n---------------- ARRAY DE OBJETOS --------------------------------\n" + node);
-	    }
-	    else if (kind == ForEachKind.ITERABLE) {
-	    	System.out.println("\n---------------- ITERABLE --------------------------------\n" + node);
-	    }
-	    else 
-	    	System.out.println("\n---------------- UNKNOWN --------------------------------\n" + node);
-	    */
 	    
 	    if (kind == ForEachKind.UNKNOWN)
 	    	return true;
@@ -87,6 +115,12 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	    return false;
 	}
 
+	/**
+     * Determines the iteration kind of the enhanced-for source expression.	 
+     *  
+	 * @param node the enhanced for statement
+	 * @return the detected {@link ForEachKind}
+	 */
 	private ForEachKind classify(EnhancedForStatement node) {
 	    ITypeBinding binding = node.getExpression().resolveTypeBinding();
 	    if (binding == null)
@@ -110,6 +144,24 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	    }
 	}
 
+	/**
+     * Converts an enhanced-for over a primitive array into
+     * an index-based while loop.
+     *
+     * <p>Generates:</p>
+     * <pre>
+     * int idx = 0;
+     * while (idx &lt; array.length) {
+     *     T element = array[idx];
+     *     ...
+     *     idx++;
+     * }
+     * </pre>
+	 * 
+	 * @param node the enhanced for statement
+	 * @param ast the current AST instance
+	 * @return an object ConversionResult (index-based)
+	 */
 	private ConversionResult convertPrimitiveArray(EnhancedForStatement node, AST ast) {
 	    String idxName = uniqueName("idx", node);
 
@@ -137,6 +189,24 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	    return new ConversionResult(idxDecl, whileStmt);
 	}
 
+	/**
+     * Converts an enhanced-for over an Iterable or reference array
+     * into an iterator-based while loop.
+     *
+     * <p>Generates:</p>
+     * <pre>
+     * Iterator&lt;T&gt; it = ...;
+     * while (it.hasNext()) {
+     *     T element = it.next();
+     *     ...
+     * }
+     * </pre>
+	 * 
+	 * @param node the enhanced for statement
+	 * @param ast the current AST instance
+	 * @param kind the kind of foreach
+	 * @return an object ConversionResult (iterator-based)
+	 */
 	private ConversionResult convertWithIterator(
 	        EnhancedForStatement node, AST ast, ForEachKind kind) {
 
@@ -208,10 +278,8 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	        iteratorCall.setName(ast.newSimpleName("iterator"));
 	    }
 
-	    // ===== Tipo T del foreach =====
 	    Type elementType = node.getParameter().getType();
 
-	    // Construimos Iterator<T>
 	    ParameterizedType iteratorType = ast.newParameterizedType(
 	            ast.newSimpleType(ast.newSimpleName("Iterator"))
 	    );
@@ -220,7 +288,6 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	            (Type) ASTNode.copySubtree(ast, elementType)
 	    );
 
-	    // Cast a Iterator<T>
 	    CastExpression castExpr = ast.newCastExpression();
 	    castExpr.setType(iteratorType);
 	    castExpr.setExpression(iteratorCall);
@@ -236,26 +303,20 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	        Block body,
 	        String itName) {
 
-	    // ===== fragment =====
 	    VariableDeclarationFragment elemFrag = ast.newVariableDeclarationFragment();
 
-	    // nombre del elemento (ej: e)
 	    elemFrag.setName(
 	            (SimpleName) ASTNode.copySubtree(ast, node.getParameter().getName())
 	    );
 
-	    // ===== it.next() =====
 	    MethodInvocation nextCall = ast.newMethodInvocation();
 	    nextCall.setExpression(ast.newSimpleName(itName));
 	    nextCall.setName(ast.newSimpleName("next"));
 
 	    Expression initializer = nextCall;
 
-	    // ===== Tipo del foreach (T) =====
 	    Type elementType = node.getParameter().getType();
 
-	    // Si el tipo NO es simple o puede venir de raw types → agregamos cast
-	    // (esto evita errores cuando el iterator no está parametrizado)
 	    CastExpression castExpr = ast.newCastExpression();
 	    castExpr.setType((Type) ASTNode.copySubtree(ast, elementType));
 	    castExpr.setExpression(nextCall);
@@ -264,9 +325,7 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 
 	    elemFrag.setInitializer(initializer);
 
-	    // ===== Declaración final =====
-	    VariableDeclarationStatement elemDecl =
-	            ast.newVariableDeclarationStatement(elemFrag);
+	    VariableDeclarationStatement elemDecl = ast.newVariableDeclarationStatement(elemFrag);
 
 	    elemDecl.setType(
 	            (Type) ASTNode.copySubtree(ast, elementType)
@@ -300,7 +359,6 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	
 
     private String uniqueName(String base, ASTNode context) {
-        // Recolecta nombres ya presentes en el bloque original
         usedNames.addAll(collectNames(context));
 
         String candidate = base;
@@ -309,14 +367,13 @@ public class ForEachToWhileVisitor extends ASTVisitor {
             candidate = base + i;
             i++;
         }
-        usedNames.add(candidate); // <-- ahora registramos el nuevo
+        usedNames.add(candidate); 
         return candidate;
     }
 
    // @SuppressWarnings("unchecked")
     private Set<String> collectNames(ASTNode context) {
         Set<String> names = new java.util.HashSet<>();
-        // Busco el bloque contenedor
         ASTNode block = context;
         while (block != null && !(block instanceof Block)) {
             block = block.getParent();
@@ -425,6 +482,12 @@ public class ForEachToWhileVisitor extends ASTVisitor {
         return hasNext;
     }
 
+    /**
+     * Adds required import declarations (Iterator, Arrays)
+     * if they are not already present in the compilation unit.
+     * 
+     * @param cu the actual CompilationUnit
+     */
     private void addMissingImports(CompilationUnit cu) {
         AST ast = cu.getAST();
         ListRewrite lr = rewrite.getListRewrite(cu, CompilationUnit.IMPORTS_PROPERTY);

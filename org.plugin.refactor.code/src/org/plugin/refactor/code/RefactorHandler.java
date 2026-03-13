@@ -14,8 +14,44 @@ import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.texteditor.ITextEditor;
 import org.eclipse.ui.PlatformUI;
 
+/**
+ * Eclipse command handler that orchestrates the complete
+ * control-flow refactoring pipeline.
+ *
+ * <p>This handler executes a multi-phase transformation over the
+ * active Java compilation unit. The process includes:</p>
+ *
+ * <ol>
+ *   <li>Parsing the source into an AST.</li>
+ *   <li>Transforming {@code for} and enhanced {@code for} loops
+ *       into {@code while} loops.</li>
+ *   <li>Annotating control-flow rupture statements
+ *       ({@code break}/{@code continue}).</li>
+ *   <li>Structurally grouping affected statements into nested
+ *       {@code if} blocks.</li>
+ *   <li>Materializing the final transformation by introducing
+ *       boolean control flags and rewriting loop conditions.</li>
+ * </ol>
+ *
+ * <p>Each phase may reparse the compilation unit to ensure that
+ * subsequent transformations operate on an updated AST.</p>
+ * 
+ */
 public class RefactorHandler extends AbstractHandler {
 
+	/**
+     * Executes the refactoring process on the currently active
+     * Java editor.
+     *
+     * <p>The transformation is applied in multiple sequential phases,
+     * each updating the source buffer and reparsing the AST when
+     * necessary.</p>
+	 * 
+     * @param event the execution event triggered by Eclipse
+     * @return null
+     * @throws ExecutionException if execution fails
+	 * 
+	 */
     @Override
     public Object execute(ExecutionEvent event) throws ExecutionException {
         try {
@@ -106,16 +142,16 @@ public class RefactorHandler extends AbstractHandler {
             cu.accept(annotator);
             // Marca el resto de breaks y continues
             cu.accept(new FlowAnnotator(cu));
-            ASTRewrite rewriter = ASTRewrite.create(cu.getAST());
+            ASTRewrite structuralRewrite = ASTRewrite.create(cu.getAST());
 
             // =======================================
             // Fase 3: Arma bloques if
             // =======================================
             
             // Crea la estructura ANIDADA de IFs (preservando el scope)
-            cu.accept(new LoopRewriterFirst(rewriter));
+            cu.accept(new LoopRewriterFirst(structuralRewrite));
             document = new Document(unit.getSource());
-            TextEdit edits = rewriter.rewriteAST(document, unit.getJavaProject().getOptions(true));
+            TextEdit edits = structuralRewrite.rewriteAST(document, unit.getJavaProject().getOptions(true));
             edits.apply(document);
 
             // Guardar cambios en el archivo original
@@ -139,12 +175,12 @@ public class RefactorHandler extends AbstractHandler {
             // Declara booleanas, 
             // cambia break y continue por stayX = false y keepY = false
             // Agrega condiciones a los ciclos
-            ASTRewrite rewriter2 = ASTRewrite.create(cu.getAST());
-            cu.accept(new LoopRewriterFinal(rewriter2));
+            ASTRewrite finalFlowRewrite = ASTRewrite.create(cu.getAST());
+            cu.accept(new LoopRewriterFinal(finalFlowRewrite));
             
             // Aplicar Cambios ---
             document = new Document(unit.getSource());
-            TextEdit edits2 = rewriter2.rewriteAST(document, unit.getJavaProject().getOptions(true));
+            TextEdit edits2 = finalFlowRewrite.rewriteAST(document, unit.getJavaProject().getOptions(true));
             edits2.apply(document);
 
             // Guardar cambios en el archivo original

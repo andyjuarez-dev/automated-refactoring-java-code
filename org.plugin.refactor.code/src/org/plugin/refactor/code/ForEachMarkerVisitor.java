@@ -13,10 +13,33 @@ import org.eclipse.jdt.core.dom.Statement;
 import org.eclipse.jdt.core.dom.WhileStatement;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 
+/**
+ * AST visitor that identifies {@link EnhancedForStatement} nodes
+ * containing non-labeled {@link BreakStatement} or
+ * {@link ContinueStatement} instructions that require transformation.
+ *
+ * <p>The visitor traverses the AST and, upon encountering a break
+ * or continue statement, searches for its closest enclosing loop.
+ * If the enclosing structure is an {@code enhanced for} statement
+ * and the control-flow interruption occurs within a conditional
+ * context, the loop is marked for subsequent conversion.</p>
+ *
+ * <p>Marked loops are annotated using the custom AST property
+ * {@code "change"}.</p>
+ * 
+ */
 public class ForEachMarkerVisitor extends ASTVisitor {
 
+	/**
+     * Set of {@link EnhancedForStatement} nodes identified
+     * as requiring transformation.
+	 */
     private final Set<EnhancedForStatement> markedFors;
-    
+
+    /**
+     * Creates a new visitor with an empty set of marked
+     * enhanced for statements.
+     */
     public ForEachMarkerVisitor() {
     	markedFors = new HashSet<>();
     }
@@ -24,7 +47,8 @@ public class ForEachMarkerVisitor extends ASTVisitor {
 
     @Override
     public boolean visit(BreakStatement node) {
-    	if (node.getLabel() != null) // break etiquetado
+        // Ignore labeled break statements
+    	if (node.getLabel() != null) 
     		return true;
 
         markForEachParent(node);
@@ -33,7 +57,8 @@ public class ForEachMarkerVisitor extends ASTVisitor {
 
     @Override
     public boolean visit(ContinueStatement node) {
-    	if (node.getLabel() != null) // continue etiquetado
+        // Ignore labeled continue statements
+    	if (node.getLabel() != null) 
     		return true;
 
         markForEachParent(node);
@@ -41,8 +66,13 @@ public class ForEachMarkerVisitor extends ASTVisitor {
     }
 
     /**
-     * Busca hacia arriba en el arbol hasta encontrar el EnhancedForStatement padre
-     * y lo marca para la conversion.
+     * Traverses the parent chain of the given statement until the
+     * closest enclosing loop is found. If the enclosing loop is an
+     * {@link EnhancedForStatement} and the break/continue appears
+     * within a conditional structure, the loop is marked for
+     * conversion.
+     * 
+     * @param stmt the break or continue statement
      */
     private void markForEachParent(Statement stmt) {
         ASTNode parent = stmt.getParent();
@@ -55,7 +85,7 @@ public class ForEachMarkerVisitor extends ASTVisitor {
         	parent = parent.getParent();
         }
         if (!hasIf) {
-//        	System.out.println("Es un break o continue degenerado");
+            // Degenerate break/continue not guarded by a conditional
         	return;
         }
         if (parent instanceof EnhancedForStatement efs) {
@@ -64,6 +94,12 @@ public class ForEachMarkerVisitor extends ASTVisitor {
         }
     }
 
+    /**
+     * Returns the set of {@link EnhancedForStatement}
+     * nodes marked for transformation.
+     * 
+     * @return the set of marked enhanced for statements
+     */
     public Set<EnhancedForStatement> getMarkedFors() {
         return markedFors;
     }

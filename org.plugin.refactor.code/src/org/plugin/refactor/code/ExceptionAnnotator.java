@@ -11,13 +11,33 @@ import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.TryStatement;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 
+/**
+ * AST visitor that annotates {@link BreakStatement} and {@link ContinueStatement}
+ * nodes when they appear inside a {@code finally} block.
+ *
+ * <p>This visitor is used to detect control-flow interruptions occurring within
+ * {@link TryStatement} finally sections, which may require special handling
+ * during refactoring to preserve semantic correctness.</p>
+ *
+ * <p>It also collects existing variable and parameter names from the compilation
+ * unit to prevent name collisions when introducing auxiliary variables.</p>
+ * 
+ */
 public class ExceptionAnnotator extends ASTVisitor {
 
-	private final Set<String> existingNames = new HashSet<>(); // variables/parametros ya declarados
-    private boolean breakInsideFinally = false;
+	/**
+     * Set of already declared variable and parameter names within the compilation unit.
+     * Used to avoid identifier collisions during transformation.
+	 */
+	private final Set<String> existingNames = new HashSet<>();
 
+	/**
+     * Creates a new annotator and collects all existing variable and parameter names
+     * from the given compilation unit.
+	 * 
+	 * @param cu the compilation unit to analyze
+	 */
     public ExceptionAnnotator(CompilationUnit cu) {
-        // Recolectar nombres existentes para evitar colisiones 
         cu.accept(new ASTVisitor() {
             @Override
             public boolean visit(VariableDeclarationFragment node) {
@@ -32,45 +52,31 @@ public class ExceptionAnnotator extends ASTVisitor {
             }
         });
     }
-
     
     @Override
      public boolean visit(TryStatement node) {
-        // buscar el while o do-while padre mas cercano
-//    	System.out.println("Try: ---------------\n" + node);
-    	Block bFin = node.getFinally();
-    	if (bFin != null) {
-//    		System.out.println("Tiene un finally");
-    	    bFin.accept(new ASTVisitor() {
+    	Block blockFinally = node.getFinally();
+    	if (blockFinally != null) {
+    	    blockFinally.accept(new ASTVisitor() {
     	        @Override
     	        public boolean visit(BreakStatement breakStmt) {
-//    	            System.out.println("Encontrado break en finally: " + breakStmt);
-    	        	if (breakStmt.getLabel() != null) // break etiquetado
+    	        	if (breakStmt.getLabel() != null) // labeled break
     	        		return true;
 
-    	            breakStmt.setProperty("breakInsideFinally", true);
-    	            
-    	            breakInsideFinally = true;
+    	        	breakStmt.setProperty("breakInsideFinally", true);
     	            return super.visit(breakStmt);
     	        }
     	        
     	        @Override
     	        public boolean visit(ContinueStatement continueStmt) {
-//    	            System.out.println("Encontrado continue en finally: " + continueStmt);
-    	        	if (continueStmt.getLabel() != null) // continue etiquetado
+    	        	if (continueStmt.getLabel() != null) // labeled continue 
     	        		return true;
 
     	            continueStmt.setProperty("continueInsideFinally", true);
     	        	return super.visit(continueStmt);
     	        }
     	    });
-
     	}
         return true;
     }
-    
-    public boolean corteInsideFinally() {
-    	return breakInsideFinally;
-    }
-    
 }

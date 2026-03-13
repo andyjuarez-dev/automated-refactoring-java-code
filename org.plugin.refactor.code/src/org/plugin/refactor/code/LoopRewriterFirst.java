@@ -17,14 +17,49 @@ import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.rewrite.ASTRewrite;
 import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
 
+/**
+ * First rewriting phase for loop bodies.
+ *
+ * <p>This visitor restructures block statements by grouping
+ * statements affected by control-flow rupture annotations
+ * (e.g., break/continue) into conditional {@link IfStatement}
+ * wrappers.</p>
+ *
+ * <p>The algorithm processes each {@link Block} bottom-up,
+ * accumulating statements and wrapping them inside newly
+ * generated {@code if} statements whenever a "move" annotation
+ * is detected.</p>
+ *
+ * <p>This phase does not create or resolve control flags;
+ * it only restructures the AST based on properties previously
+ * attached by flow-annotation visitors.</p>
+ * 
+ */
 public class LoopRewriterFirst extends ASTVisitor {
 
     private ASTRewrite rewrite;
 
+    /**
+     * Creates a new rewriter phase.
+     *  
+     * @param rewrite the ASTRewrite instance used to apply structural changes
+     */
     public LoopRewriterFirst(ASTRewrite rewrite) {
         this.rewrite = rewrite;
     }
     
+    /**
+     * Rewrites a block by grouping statements according to
+     * previously attached control-flow annotations.
+     *
+     * <p>The block is traversed bottom-up. Statements that carry
+     * a "moves" property (or special labeled markers) trigger
+     * the creation of a new {@code if} statement that wraps the
+     * accumulated statement group.</p>
+     *
+     * <p>The final reconstructed block replaces the original
+     * list of statements using {@link ListRewrite}.</p>
+     */
     @SuppressWarnings("unchecked")
 	public boolean visit(Block node) {
         List<Statement> stmts = node.statements();
@@ -97,7 +132,17 @@ public class LoopRewriterFirst extends ASTVisitor {
 
         return true;
     }    
-    
+
+    /**
+     * Retrieves all auxiliary control variable names associated
+     * with break statements in the enclosing loop.
+     *
+     * <p>This includes both regular break flags and those
+     * originating from {@code finally} blocks.</p>
+     * 
+     * @param stmt a statement inside the loop
+     * @return list of control flag identifiers
+     */
     @SuppressWarnings("unchecked")
 	private List<String> getBreakNames(Statement stmt) {
     	List<String> breakNames = new ArrayList<>();
@@ -113,8 +158,15 @@ public class LoopRewriterFirst extends ASTVisitor {
     	return breakNames;
     }
     
+    /**
+     * Finds the nearest enclosing loop (currently WhileStatement).
+     *  
+     * @param stmt the starting statement
+     * @return the enclosing loop node, or null if none is found
+     */
     private ASTNode getParent(Statement stmt) {
     	ASTNode parent = stmt.getParent();
+    	// TODO: ver de agregar DoStatement
     	while ((parent != null) &&
     			!(parent instanceof WhileStatement)) {
     		parent = parent.getParent();
@@ -122,8 +174,19 @@ public class LoopRewriterFirst extends ASTVisitor {
     	return parent;
     }
     
+    /**
+     * Builds a logical AND condition combining all provided
+     * control flag names.
+     *
+     * <p>If only one name is present, a simple name expression
+     * is returned. Otherwise, a left-associative chain of
+     * {@code &&} expressions is constructed.</p>
+     * 
+     * @param ast the AST instance used to create nodes
+     * @param names the control flag identifiers
+     * @return the resulting boolean expression
+     */
     private Expression buildCondition(AST ast, List<String> names) {
-//    	System.out.println("\n**************** ARMO LA CONDICION ****************************************\n");
         if (names.size() == 1) {
             return ast.newSimpleName(names.get(0));
         }
@@ -139,5 +202,4 @@ public class LoopRewriterFirst extends ASTVisitor {
         }
         return ed;
     }
-
 }
