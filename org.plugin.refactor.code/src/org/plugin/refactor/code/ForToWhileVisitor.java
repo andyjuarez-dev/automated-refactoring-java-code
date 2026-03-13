@@ -54,7 +54,23 @@ public class ForToWhileVisitor extends ASTVisitor {
     public ForToWhileVisitor(ASTRewrite rewriter) {
         this.rewriter = rewriter;
     }
-    
+
+    /**
+     * Visits and transforms {@code Block} nodes by converting specific {@code ForStatement} 
+     * nodes into {@code WhileStatement} structures.
+     * This transformation is triggered only for loops marked with the "change" property.
+     * It performs a structural reorganization by:
+     * <ul>
+     * <li>Moving initializers before the new while loop.</li>
+     * <li>Converting the for-condition into the while-expression.</li>
+     * <li>Appending updaters at the end of the while-body, wrapped in labeled statements 
+     * to support subsequent jump statement processing.</li>
+     * </ul>
+     *
+     * @param node The {@code Block} node being visited.
+     * @return true to continue visiting the AST.
+     * 
+     */
     @SuppressWarnings("unchecked")    
     @Override
     public boolean visit(Block node) {
@@ -74,8 +90,8 @@ public class ForToWhileVisitor extends ASTVisitor {
                 
                 /*
                  * 1. Condition transformation:
-                 * If the original for-loop has no condition,
-                 * it is treated as an infinite loop (while true).
+                 * 		If the original for-loop has no condition,
+                 * 		it is treated as an infinite loop (while true).
                  */
                 Expression cond = forStmt.getExpression() != null 
                     ? (Expression) ASTNode.copySubtree(ast, forStmt.getExpression()) 
@@ -84,8 +100,8 @@ public class ForToWhileVisitor extends ASTVisitor {
 
                 /*
                  * 2. Body transformation:
-                 * The original body is moved into a new block
-                 * representing the body of the while loop.
+                 * 		The original body is moved into a new block
+                 * 		representing the body of the while loop.
                  */
                 Block whileBody = ast.newBlock();
                 Statement movedBody = (Statement) rewriter.createMoveTarget(forStmt.getBody());
@@ -93,8 +109,8 @@ public class ForToWhileVisitor extends ASTVisitor {
 
                 /*
                  * 3. Updater handling:
-                 * Each updater expression is appended at the end
-                 * of the while body and wrapped in a labeled statement.
+                 * 		Each updater expression is appended at the end
+                 * 		of the while body and wrapped in a labeled statement.
                  */
                 String data;
                 if (forStmt.getProperty("hasBreak") != null)
@@ -115,8 +131,8 @@ public class ForToWhileVisitor extends ASTVisitor {
 
                 /*
                  * 4. Initializer extraction:
-                 * If the for-loop contains initializers,
-                 * they are extracted and placed before the loop.
+                 * 		If the for-loop contains initializers,
+                 * 		they are extracted and placed before the loop.
                  */
                 if (forStmt.initializers().isEmpty()) {
                     lr.replace(stmt, whileNode, null);
@@ -138,7 +154,6 @@ public class ForToWhileVisitor extends ASTVisitor {
         return true;
     }
     
-
     /**
      * Converts a {@link VariableDeclarationExpression} (used in a {@code for} initializer) 
      * into an equivalent {@link VariableDeclarationStatement} 

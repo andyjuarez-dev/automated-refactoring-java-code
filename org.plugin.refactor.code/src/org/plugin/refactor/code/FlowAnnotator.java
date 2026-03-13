@@ -43,9 +43,15 @@ import org.eclipse.jdt.core.dom.WhileStatement;
  * 
  */
 public class FlowAnnotator extends ASTVisitor {
-	
+
+	/**
+	 * Names generated during the transformation process to ensure uniqueness.
+	 */
     private final Set<String> usedNames = new HashSet<>();
-    private final Set<String> existingNames = new HashSet<>(); // variables/parametros ya declarados
+    /**
+     * Names of variables and parameters already declared in the original scope. 
+     */
+    private final Set<String> existingNames = new HashSet<>(); 
 
     /**
      * Creates a new flow annotator and collects existing
@@ -74,6 +80,8 @@ public class FlowAnnotator extends ASTVisitor {
      * Processes a break statement and associates it with
      * an auxiliary control flag if it appears inside a
      * conditional context within a loop.
+     * 
+     * @param node The break statement being analyzed  
      */
     @SuppressWarnings("unchecked")
 	@Override
@@ -132,6 +140,8 @@ public class FlowAnnotator extends ASTVisitor {
      * Processes a continue statement and associates it with
      * an auxiliary control flag if it appears inside a
      * conditional context within a loop.
+     * 
+     * @param node The continue statement being analyzed 
      */
     @SuppressWarnings("unchecked")
 	@Override
@@ -234,8 +244,6 @@ public class FlowAnnotator extends ASTVisitor {
                     List<Statement> stmts = (List<Statement>) block.statements();
                     int index = stmts.indexOf(son);
 
-                    // TODO: ver esto -------------------------------
-                    // CAMBIO AQUÍ: Solo marcamos la SIGUIENTE, no todas
                     if (index >= 0 && index < (stmts.size() - 1)) {
                         Statement nextStmt = stmts.get(index + 1);
                         moves = (HashSet<String>) nextStmt.getProperty("moves");
@@ -244,9 +252,6 @@ public class FlowAnnotator extends ASTVisitor {
                         }
                         moves.add(name);
                         nextStmt.setProperty("moves", moves);
-                        
-                        // IMPORTANTE: Una vez que marcamos la primera del bloque, 
-                        // ya no necesitamos seguir marcando hermanos en este nivel.
                     }
             	}
                 if (parent instanceof CatchClause catchClause) {
@@ -254,17 +259,15 @@ public class FlowAnnotator extends ASTVisitor {
                     List<Statement> statements = (List<Statement>) body.statements();
                     int idx = statements.indexOf(son);
 
-                    // TODO: dejar igual que el bloque anterior: sacar el for
                     if (idx >= 0 && idx < (statements.size() - 1)) {
-                        for (int i = idx + 1; i < statements.size(); i++) {
-                        	moves = (HashSet<String>) statements.get(idx).getProperty("moves");
-                        	if (moves == null) {
-                        		moves = new HashSet<String>();
-                        	}
-                        	moves.add(name);
-                            statements.get(idx).setProperty("moves", moves);
+                        Statement nextStmt = statements.get(idx + 1);
+                        moves = (HashSet<String>) nextStmt.getProperty("moves");
+                        if (moves == null) {
+                            moves = new HashSet<String>();
                         }
-                    } 
+                        moves.add(name);
+                        nextStmt.setProperty("moves", moves);
+                    }
                 }
                 son = parent;
                 parent = son.getParent();

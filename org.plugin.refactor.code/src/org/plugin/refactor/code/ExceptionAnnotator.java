@@ -52,10 +52,17 @@ public class ExceptionAnnotator extends ASTVisitor {
             }
         });
     }
-    
+
+    /**
+     * Traverses the "finally" block of a try statement to identify and mark 
+     * break and continue statements.
+     * @param node The TryStatement being visited.
+     * @return true to continue visiting the AST.
+     */
     @Override
      public boolean visit(TryStatement node) {
     	Block blockFinally = node.getFinally();
+        // If a finally block exists, visit its children to find control flow statements
     	if (blockFinally != null) {
     	    blockFinally.accept(new ASTVisitor() {
     	        @Override

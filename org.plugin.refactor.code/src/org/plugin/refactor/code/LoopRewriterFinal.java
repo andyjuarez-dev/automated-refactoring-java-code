@@ -45,7 +45,9 @@ import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
  */
 public class LoopRewriterFinal extends ASTVisitor {
 
-
+	/**
+     * Rewriter used to apply structural modifications to the AST.	 
+     */
     private ASTRewrite rewrite;
 
     /**
@@ -66,9 +68,8 @@ public class LoopRewriterFinal extends ASTVisitor {
      */
     @Override
     public void endVisit(BreakStatement node) {
-      	// Reemplaza el continue por la variable que sea = false
+      	// Replace the break statement with any stayX = false
           String nombre = (String) node.getProperty("breakName");
-//          System.out.println("entro en el continue");
           if (nombre == null)
           	nombre = (String) node.getProperty("breakNameFinally");
           if (nombre != null) {
@@ -77,7 +78,6 @@ public class LoopRewriterFinal extends ASTVisitor {
               asign.setLeftHandSide(ast.newSimpleName(nombre));
               asign.setRightHandSide(ast.newBooleanLiteral(false));
               asign.setOperator(Assignment.Operator.ASSIGN);
-
               ExpressionStatement reemplazo = ast.newExpressionStatement(asign);
               rewrite.replace(node, reemplazo, null);
           }
@@ -90,11 +90,10 @@ public class LoopRewriterFinal extends ASTVisitor {
      * <p>The control variable name is retrieved from
      * properties attached in earlier phases.</p>
      */
-  @Override
-  public void endVisit(ContinueStatement node) {
-    	// Reemplaza el continue por la variable que sea = false
+    @Override
+  	public void endVisit(ContinueStatement node) {
+    	// Replace the continue statement with any keepY = false
         String nombre = (String) node.getProperty("continueName");
-//        System.out.println("entro en el continue");
         if (nombre == null)
         	nombre = (String) node.getProperty("continueNameFinally");
         if (nombre != null) {
@@ -103,47 +102,48 @@ public class LoopRewriterFinal extends ASTVisitor {
             asign.setLeftHandSide(ast.newSimpleName(nombre));
             asign.setRightHandSide(ast.newBooleanLiteral(false));
             asign.setOperator(Assignment.Operator.ASSIGN);
-
             ExpressionStatement reemplazo = ast.newExpressionStatement(asign);
             rewrite.replace(node, reemplazo, null);
         }
-  }
+    }
     
 
   	/**
      * Processes while loops that require flow rewriting. 
      */
-  @Override
-  public boolean visit(WhileStatement node) {
-	  if (needsFlowRewrite(node))
-		  processLoop3(node);
-      return true;
-  }
+    @Override
+    public boolean visit(WhileStatement node) {
+    	if (needsFlowRewrite(node))
+    		applyFlowTransformation(node);
+    	return true;
+    }
 
-  
-  @Override
-  public boolean visit(DoStatement node) {
-	  if (needsFlowRewrite(node))
-		  processLoop3(node);
-      return true;
-  }
+	/**
+	 * Processes do-while loops that require flow rewriting. 
+	 */
+    @Override
+    public boolean visit(DoStatement node) {
+    	if (needsFlowRewrite(node))
+    		applyFlowTransformation(node);
+    	return true;
+    }
 
-  /**
+    /**
      * Determines whether a loop node requires transformation
      * based on the presence of previously attached control-flow
      * properties.
-   * 
-   * @param node the loop statement
-   * @return true if rewriting is required
-   */
-  private boolean needsFlowRewrite(Statement node) {
+     * 
+     * @param node the loop statement
+     * @return true if rewriting is required
+     */
+    private boolean needsFlowRewrite(Statement node) {
 	    return node.getProperty("breakName") != null
 	        || node.getProperty("breakNamesFinally") != null
 	        || node.getProperty("continueName") != null
 	        || node.getProperty("continueNamesFinally") != null;
 	}
 
-  /**
+    /**
      * Applies the full transformation to a loop:
      *
      * <ul>
@@ -155,56 +155,49 @@ public class LoopRewriterFinal extends ASTVisitor {
      * <p>This method assumes that rupture annotations have already
      * been computed in previous phases.</p>
      *
-   * 
-   * @param loopNode
-   */
-  @SuppressWarnings("unchecked")
-private void processLoop3(Statement loopNode) {
-
-  	/*
-  	 * Esta parte agrega las booleanas necesarias (antes o despues del while, por ahora, solo antes)
-  	 */
-      String nameB  = (String) loopNode.getProperty("breakName");
-      Set<String> namesF = (Set<String>) loopNode.getProperty("breakNamesFinally");
-      String continueName = (String) loopNode.getProperty("continueName");
-      Set<String> contNamesF = (Set<String>) loopNode.getProperty("continueNamesFinally");
+     * 
+     * @param loopNode
+     */
+    @SuppressWarnings("unchecked")
+    private void applyFlowTransformation(Statement loopNode) {
+    	// Add the necessary booleans (before or after the while loop)
+    	String breakName  = (String) loopNode.getProperty("breakName");
+    	Set<String> breakFinallyNames = (Set<String>) loopNode.getProperty("breakNamesFinally");
+    	String continueName = (String) loopNode.getProperty("continueName");
+    	Set<String> continueFinallyNames = (Set<String>) loopNode.getProperty("continueNamesFinally");
       
-      if ((nameB == null) && (namesF == null) && (continueName == null) && (contNamesF == null)) 
-      	return;
+    	if ((breakName == null) && (breakFinallyNames == null) && (continueName == null) && (continueFinallyNames == null)) 
+    		return;
 
-      AST ast = loopNode.getAST();
+    	AST ast = loopNode.getAST();
 
-      if (nameB != null) {
-          // crear: boolean nombre = true;
-          VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();
-          frag.setName(ast.newSimpleName(nameB));
-          frag.setInitializer(ast.newBooleanLiteral(true));
-          VariableDeclarationStatement decl = ast.newVariableDeclarationStatement(frag);
-          decl.setType(ast.newPrimitiveType(PrimitiveType.BOOLEAN));
+    	if (breakName != null) {
+    		// create: boolean stayX = true;
+    		VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();
+    		frag.setName(ast.newSimpleName(breakName));
+    		frag.setInitializer(ast.newBooleanLiteral(true));
+    		VariableDeclarationStatement decl = ast.newVariableDeclarationStatement(frag);
+    		decl.setType(ast.newPrimitiveType(PrimitiveType.BOOLEAN));
 
-          // insertar declaracion antes del loop o envolver en Block si el parent no es Block
-          insertDeclarationBefore(loopNode, decl);
-      }
+    		// insert declaration before loop or wrap in a block if the parent is not one
+    		insertDeclarationBefore(loopNode, decl);
+    	}
 
-      if (namesF != null) {
-          // crear: boolean nombre = true;
-          //VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();
-          for (String name : namesF) {
-              VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();
-              frag.setName(ast.newSimpleName(name));
-              frag.setInitializer(ast.newBooleanLiteral(true));
-              VariableDeclarationStatement decl = ast.newVariableDeclarationStatement(frag);
-              decl.setType(ast.newPrimitiveType(PrimitiveType.BOOLEAN));
+    	if (breakFinallyNames != null) {
+    		for (String name : breakFinallyNames) {
+    			VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();
+    			frag.setName(ast.newSimpleName(name));
+    			frag.setInitializer(ast.newBooleanLiteral(true));
+    			VariableDeclarationStatement decl = ast.newVariableDeclarationStatement(frag);
+    			decl.setType(ast.newPrimitiveType(PrimitiveType.BOOLEAN));
+    			insertDeclarationBefore(loopNode, decl);
+    		}
+    	}
 
-              // insertar declaracion antes del loop o envolver en Block si el parent no es Block
-              insertDeclarationBefore(loopNode, decl);
-          }
-      }
-
-      /*
-       * Esta parte cambia las condiciones del while
-       */
-      if ((nameB != null) || (namesF != null)) {
+    	/*
+    	 * this changes the while conditions
+    	 */
+    	if ((breakName != null) || (breakFinallyNames != null)) {
 	        Expression originalCond = null;
 	        if (loopNode instanceof WhileStatement) {
 	            originalCond = ((WhileStatement) loopNode).getExpression();
@@ -213,17 +206,16 @@ private void processLoop3(Statement loopNode) {
 	        }
 	        
 	        ParenthesizedExpression paren = ast.newParenthesizedExpression();
-	        // usar createCopyTarget para que ASTRewrite maneje la copia
 	        paren.setExpression((Expression) rewrite.createCopyTarget(originalCond));
 	        Expression ed = paren;
 	        InfixExpression newCond = null;
 	
 	        List<String> nombres = new ArrayList<String>();
-	        if (nameB != null) {
-	        	nombres.add(nameB);
+	        if (breakName != null) {
+	        	nombres.add(breakName);
 	        }
-	        if (namesF != null) {
-	        	for (String s: namesF) {
+	        if (breakFinallyNames != null) {
+	        	for (String s: breakFinallyNames) {
 	        		nombres.add(s);        		
 	        	} 
 	        }
@@ -241,68 +233,63 @@ private void processLoop3(Statement loopNode) {
 	        	}
 	        	rewrite.replace(originalCond, newCond, null);
 	        }
-      }
-      
-      // Parte del CONTINUE ---------------------------------------------
-      if (continueName != null) {
-          // crear: boolean nombre = true;
-          VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();
-          frag.setName(ast.newSimpleName(continueName));
-          frag.setInitializer(ast.newBooleanLiteral(true));
-          VariableDeclarationStatement decl = ast.newVariableDeclarationStatement(frag);
-          decl.setType(ast.newPrimitiveType(PrimitiveType.BOOLEAN));
+    	}
 
-          // insertar declaracion despues del loop 
-          insertDeclarationFirst(loopNode, decl);
-      }
+    	/*
+    	 * CONTINUE management ------------
+    	 */
+    	if (continueName != null) {
+    		VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();
+    		frag.setName(ast.newSimpleName(continueName));
+    		frag.setInitializer(ast.newBooleanLiteral(true));
+    		VariableDeclarationStatement decl = ast.newVariableDeclarationStatement(frag);
+    		decl.setType(ast.newPrimitiveType(PrimitiveType.BOOLEAN));
 
-      if (contNamesF != null) {
-          // crear: boolean nombre = true;
-          //VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();
-          for (String name : contNamesF) {
-              VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();
-              frag.setName(ast.newSimpleName(name));
-              frag.setInitializer(ast.newBooleanLiteral(true));
-              VariableDeclarationStatement decl = ast.newVariableDeclarationStatement(frag);
-              decl.setType(ast.newPrimitiveType(PrimitiveType.BOOLEAN));
+    		insertDeclarationFirst(loopNode, decl);
+    	}
 
-              // insertar declaracion antes del loop o envolver en Block si el parent no es Block
-              insertDeclarationFirst(loopNode, decl);
-          }
-      }
-  }
+    	if (continueFinallyNames != null) {
+    		for (String name : continueFinallyNames) {
+    			VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();
+    			frag.setName(ast.newSimpleName(name));
+    			frag.setInitializer(ast.newBooleanLiteral(true));
+    			VariableDeclarationStatement decl = ast.newVariableDeclarationStatement(frag);
+    			decl.setType(ast.newPrimitiveType(PrimitiveType.BOOLEAN));
+    			insertDeclarationFirst(loopNode, decl);
+    		}
+    	}
+    }
 
-  /**
+    /**
      * Inserts a declaration as the first statement
      * inside the loop body.
      *
      * <p>This is primarily used for continue-related
      * control flags.</p>
-   * 
-   * @param loopNode
-   * @param decl
-   */
-  private void insertDeclarationFirst(Statement loopNode, VariableDeclarationStatement decl) {
-      ASTNode body = getBody(loopNode);
+     * 
+     * @param loopNode
+     * @param decl
+     */
+    private void insertDeclarationFirst(Statement loopNode, VariableDeclarationStatement decl) {
+    	ASTNode body = getBody(loopNode);
+    	if (body != null) {
+    		// The body is already a block { ... }
+    		ListRewrite lr = rewrite.getListRewrite(body, Block.STATEMENTS_PROPERTY);
+    		lr.insertFirst(decl, null);
+    	} 
+    }
 
-      if (body != null) {
-          // Caso 1: el cuerpo ya es un bloque { ... }
-          ListRewrite lr = rewrite.getListRewrite(body, Block.STATEMENTS_PROPERTY);
-          lr.insertFirst(decl, null);
-      } 
-  }
-
-  /**
+    /**
      * Inserts a variable declaration before the loop.
      * 
      * <p>If the loop is not already enclosed in a block,
      * a new block is created to preserve syntactic correctness.</p>
-   * 
-   * @param loopNode
-   * @param decl
-   */
-  @SuppressWarnings("unchecked")
-private void insertDeclarationBefore(Statement loopNode, VariableDeclarationStatement decl) {
+     * 
+     * @param loopNode
+     * @param decl
+     */
+    @SuppressWarnings("unchecked")
+    private void insertDeclarationBefore(Statement loopNode, VariableDeclarationStatement decl) {
 	    AST ast = loopNode.getAST();
 	    ASTNode parent = loopNode.getParent();
 
@@ -310,37 +297,35 @@ private void insertDeclarationBefore(Statement loopNode, VariableDeclarationStat
 	        ListRewrite listRewrite = rewrite.getListRewrite(parent, Block.STATEMENTS_PROPERTY);
 	        listRewrite.insertBefore(decl, loopNode, null);
 	    } else {
-	        // Creamos el bloque que envolverá al if sin llaves
+	        // We create the block that will wrap the if without braces.
 	        Block newBlock = ast.newBlock();
 	        
-	        // 1. Agregamos la declaración directamente
+	        // 1. We add the declaration
 	        newBlock.statements().add(decl); 
 	        
-	        // 2. IMPORTANTE: Usamos move target para no perder el rastro del loop
-	        // Esto permite que el rewriter sepa que el loopNode "original" 
-	        // ahora vive dentro de este bloque.
+	        // 2. copy the statement
 	        Statement moveTarget = (Statement) rewrite.createMoveTarget(loopNode);
 	        newBlock.statements().add(moveTarget);
 	        
-	        // 3. Reemplazamos el bucle original (que estaba bajo el 'if') por el nuevo bloque
+	        // 3. We replaced the original loop (which was under the 'if') 
+	        //    with the new block
 	        rewrite.replace(loopNode, newBlock, null);
 	    }
 	}  
   
-  /**
+    /**
      * Retrieves the block body of a loop if present.  
      *  
-   * @param node a loop statement
-   * @return the loop body block or null
-   */
-  public Block getBody(Statement node) {
-  	Block block = null;
-  	if (node instanceof WhileStatement ws && ws.getBody() instanceof Block)
-  		block = (Block) ws.getBody();
-  	if (node instanceof DoStatement ds && ds.getBody() instanceof Block)
-  		block = (Block) ds.getBody();
+     * @param node a loop statement
+     * @return the loop body block or null
+     */
+    public Block getBody(Statement node) {
+    	Block block = null;
+    	if (node instanceof WhileStatement ws && ws.getBody() instanceof Block)
+    		block = (Block) ws.getBody();
+    	if (node instanceof DoStatement ds && ds.getBody() instanceof Block)
+    		block = (Block) ds.getBody();
 
-  	return block;
-  }
-  
+    	return block;
+    }
 }

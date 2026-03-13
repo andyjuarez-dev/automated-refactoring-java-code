@@ -71,12 +71,25 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	    UNKNOWN
 	}
 	
+	/**
+     * Set of {@link EnhancedForStatement} nodes identified
+     * as requiring transformation.
+	 */
     private final Set<EnhancedForStatement> markedFors;
+
+    /** Rewriter used to apply structural modifications to the AST.	*/
     private final ASTRewrite rewrite;
+
+    /** The compilation unit of the source file, used to inspect existing imports. */
     private final CompilationUnit cu;
+
+    /** Names generated during the transformation process to ensure uniqueness.	 */
     private final Set<String> usedNames = new java.util.HashSet<>();
 
+    /** Flag indicating if 'java.util.Iterator' needs to be added to the imports. */
     private boolean needsIteratorImport = false;
+    
+    /** Flag indicating if 'java.util.Arrays' needs to be added to the imports. */
     private boolean needsArraysImport = false;
 
     /**
@@ -93,14 +106,39 @@ public class ForEachToWhileVisitor extends ASTVisitor {
         this.cu = cu;
     }
 
+    /**
+     * Visits {@code EnhancedForStatement} (for-each) nodes to perform their conversion 
+     * into {@code WhileStatement} structures.
+     * The process follows these steps:
+     * <ol>
+     * <li>Validation: Checks if the node is flagged for transformation.</li>
+     * <li>Classification: Determines if the expression is a primitive array, 
+     * an object array, or a {@code Iterable} collection.</li>
+     * <li>Conversion: Dispatches the transformation to specialized methods 
+     * based on the detected type.</li>
+     * <li>Replacement: Updates the AST with the generated while-loop and 
+     * any required setup statements (e.g., iterator initialization).</li>
+     * </ol>
+     *
+     * @param node The {@code EnhancedForStatement} node to be transformed.
+     * @return false to prevent visiting nested nodes that are already being refactored, 
+     * true if no transformation is performed.
+     * 
+     */
 	@Override
 	public boolean visit(EnhancedForStatement node) {
+        // Skip nodes not marked for transformation
     	if (node.getProperty("change") == null)
     		return true;
 		
 	    if (!markedFors.contains(node)) return true;
 
 	    AST ast = node.getAST();
+	    
+        /* 
+         * Identify the type of the expression being iterated (Array vs Collection).
+         * This classification determines the specific while-loop template to use.
+         */
 	    ForEachKind kind = classify(node);
 	    
 	    if (kind == ForEachKind.UNKNOWN)
@@ -111,6 +149,10 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	        default -> convertWithIterator(node, ast, kind);
 	    };
 
+        /* 
+         * Finalize the transformation by inserting the replacement block 
+         * into the ASTRewrite stream.
+         */
 	    insertReplacement(node, result.preStatement, result.whileStmt);
 	    return false;
 	}
@@ -133,11 +175,25 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	    }
 	    return ForEachKind.ITERABLE;
 	}
-	
-	private static class ConversionResult {
-	    final Statement preStatement;
-	    final WhileStatement whileStmt;
 
+	/**
+     * A helper class to store the result of a for-each to while conversion.
+     * Since the transformation requires both a setup statement (such as an 
+     * iterator or index initialization) and the actual loop, this class 
+     * wraps both components to be inserted into the AST together.
+	 * 
+	 */
+	private static class ConversionResult {
+        /** The initialization statement to be placed before the loop. */
+		final Statement preStatement;
+
+        /** The generated while loop. */
+		final WhileStatement whileStmt;
+
+        /**
+         * @param pre The setup statement (initialization).
+         * @param w The constructed while statement.
+         */
 	    ConversionResult(Statement pre, WhileStatement w) {
 	        this.preStatement = pre;
 	        this.whileStmt = w;
@@ -230,21 +286,37 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	    return new ConversionResult(iterDecl, whileStmt);
 	}
 
+	
+	/**
+     * Constructs the iterator declaration statement required for the while-loop.
+     * This method creates a statement like {@code Iterator<Type> it = collection.iterator();}.
+     * It automatically handles type boxing if the for-each parameter is a primitive type,
+     * ensuring the {@code Iterator} is correctly parameterized.
+	 * 
+	 * @param node The original for-each statement.
+	 * @param ast The AST instance to create new nodes.
+	 * @param itName The unique name generated for the new iterator variable.
+	 * @param kind The classification of the for-each (Collection vs Array).
+	 * @return A {@code VariableDeclarationStatement} for the iterator.
+	 */
 	@SuppressWarnings("unchecked")
 	private VariableDeclarationStatement buildIteratorDeclaration(
-	        EnhancedForStatement node, AST ast, String itName, ForEachKind kind) {
+			EnhancedForStatement node, AST ast, String itName, ForEachKind kind) {
 
+	    // 1. Create the fragment (it = collection.iterator())
 	    VariableDeclarationFragment frag = ast.newVariableDeclarationFragment();
 	    frag.setName(ast.newSimpleName(itName));
 	    frag.setInitializer(buildIteratorInit(node, ast, kind));
 
 	    VariableDeclarationStatement decl = ast.newVariableDeclarationStatement(frag);
 
+	    // 2. Determine the element type and apply boxing if necessary
 	    Type elemType = (Type) ASTNode.copySubtree(ast, node.getParameter().getType());
 	    if (elemType.isPrimitiveType()) {
 	        elemType = boxedType(ast, (PrimitiveType) elemType);
 	    }
 
+	    // 3. Create the ParameterizedType: Iterator<ElemType>
 	    ParameterizedType iterType =
 	            ast.newParameterizedType(ast.newSimpleType(ast.newSimpleName("Iterator")));
 	    iterType.typeArguments().add(elemType);
@@ -252,7 +324,21 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 
 	    return decl;
 	}
-	
+
+
+	/**
+     * Builds the initialization expression for the iterator.
+     * Depending on the expression type, it generates:
+     * <ul>
+     * <li>For Collections: {@code (Iterator<Type>) collection.iterator()}</li>
+     * <li>For Reference Arrays: {@code (Iterator<Type>) Arrays.stream(array).iterator()}</li>
+     * </ul>
+	 * 
+	 * @param node The original for-each statement.
+	 * @param ast The AST instance.
+	 * @param kind The detected kind of the for-each expression (Array vs. Collection).
+	 * @return A {@code CastExpression} containing the iterator initialization logic.
+	 */
 	@SuppressWarnings("unchecked")
 	private Expression buildIteratorInit(
 	        EnhancedForStatement node, AST ast, ForEachKind kind) {
@@ -262,12 +348,18 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 
 	    MethodInvocation iteratorCall;
 
+	    /* 
+	     * If it's a reference array, we use Java Streams to obtain an iterator.
+	     * This allows us to treat arrays and collections uniformly.
+	     */
 	    if (kind == ForEachKind.REFERENCE_ARRAY) {
-	        MethodInvocation stream = ast.newMethodInvocation();
+	        // Generates: Arrays.stream(expr)
+	    	MethodInvocation stream = ast.newMethodInvocation();
 	        stream.setExpression(ast.newSimpleName("Arrays"));
 	        stream.setName(ast.newSimpleName("stream"));
 	        stream.arguments().add(exprCopy);
 
+	        // Generates: Arrays.stream(expr).iterator()
 	        iteratorCall = ast.newMethodInvocation();
 	        iteratorCall.setExpression(stream);
 	        iteratorCall.setName(ast.newSimpleName("iterator"));
@@ -278,6 +370,7 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	        iteratorCall.setName(ast.newSimpleName("iterator"));
 	    }
 
+	    // Set up the parameterized type for the Cast: (Iterator<ElementType>)
 	    Type elementType = node.getParameter().getType();
 
 	    ParameterizedType iteratorType = ast.newParameterizedType(
@@ -288,6 +381,7 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	            (Type) ASTNode.copySubtree(ast, elementType)
 	    );
 
+	    // Wrap everything in a CastExpression to ensure type safety in the generated code
 	    CastExpression castExpr = ast.newCastExpression();
 	    castExpr.setType(iteratorType);
 	    castExpr.setExpression(iteratorCall);
@@ -296,6 +390,18 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	}
 	
 
+
+	/**
+     * Declares the loop element variable at the beginning of the while-body.
+     * This method generates a statement such as {@code Type element = (Type) it.next();}.
+     * It ensures that the rest of the loop body can reference the original element 
+     * name without further modifications.
+	 * 
+	 * @param node The original for-each statement.
+	 * @param ast The AST instance.
+	 * @param body The block representing the new while-loop body.
+	 * @param itName The name of the iterator variable previously declared.
+	 */
 	@SuppressWarnings("unchecked")
 	private void addIteratorElementDeclaration(
 	        EnhancedForStatement node,
@@ -303,18 +409,22 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	        Block body,
 	        String itName) {
 
+	    // 1. Create the fragment with the original variable name (e.g., 'it1')
 	    VariableDeclarationFragment elemFrag = ast.newVariableDeclarationFragment();
 
 	    elemFrag.setName(
 	            (SimpleName) ASTNode.copySubtree(ast, node.getParameter().getName())
 	    );
 
+	    // 2. Prepare the 'it.next()' call
 	    MethodInvocation nextCall = ast.newMethodInvocation();
 	    nextCall.setExpression(ast.newSimpleName(itName));
 	    nextCall.setName(ast.newSimpleName("next"));
 
 	    Expression initializer = nextCall;
 
+	    // 3. Apply a Cast to the element type: (Type) it.next()
+	    // This is crucial for compatibility with generic Iterators in some contexts.
 	    Type elementType = node.getParameter().getType();
 
 	    CastExpression castExpr = ast.newCastExpression();
@@ -325,16 +435,33 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 
 	    elemFrag.setInitializer(initializer);
 
+	    // 4. Create the full declaration statement: Type item = (Type) it.next();
 	    VariableDeclarationStatement elemDecl = ast.newVariableDeclarationStatement(elemFrag);
 
 	    elemDecl.setType(
 	            (Type) ASTNode.copySubtree(ast, elementType)
 	    );
 
+	    // Insert the declaration at the very beginning of the new while body
 	    body.statements().add(elemDecl);
 	}
 
-	
+
+	/**
+     * Integrates the transformed while-loop and its initialization statement into the AST.
+     * This method handles two structural scenarios:
+     * <ol>
+     * <li>If the parent is a {@code Block}, the initialization is inserted 
+     * immediately before the original loop.</li>
+     * <li>If the parent is not a block (e.g., a single-statement {@code if}), 
+     * both the initialization and the while-loop are wrapped in a new 
+     * {@code Block} to preserve syntax validity.</li>
+     * </ol>
+	 * 
+	 * @param node The original {@code EnhancedForStatement} node.
+	 * @param pre The initialization statement (e.g., iterator declaration).
+	 * @param replacement The newly constructed {@code WhileStatement}.
+	 */
 	@SuppressWarnings("unchecked")
 	private void insertReplacement(
 	        EnhancedForStatement node,
@@ -344,12 +471,21 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	    AST ast = node.getAST();
 	    ASTNode parent = node.getParent();
 
+	    /* 
+	     * Scenario 1: The loop is inside a standard block { ... }
+	     * We use ListRewrite to inject the 'pre' statement before the loop.
+	     */
 	    if (parent instanceof Block) {
 	        ListRewrite lr =
 	                rewrite.getListRewrite(parent, Block.STATEMENTS_PROPERTY);
 	        lr.insertBefore(pre, node, null);
 	        rewrite.replace(node, replacement, null);
-	    } else {
+	    }
+	    /* 
+	     * Scenario 2: The loop is a standalone statement (e.g., if (cond) for(...))
+	     * We must wrap both 'pre' and 'while' in a new Block to avoid syntax errors.
+	     */
+	    else {
 	        Block wrapper = ast.newBlock();
 	        wrapper.statements().add(pre);
 	        wrapper.statements().add(replacement);
@@ -358,26 +494,53 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 	}
 	
 
+	/**
+     * Generates a unique variable name within the given context to avoid naming collisions.
+     * <p>
+     * It first collects all existing names in the current scope and then appends a 
+     * numeric suffix to the base name if a conflict is detected (e.g., "it" becomes "it1").
+     * </p>
+	 * 
+	 * @param base The preferred base name for the new variable.
+	 * @param context The AST node used as a reference to determine the current scope.
+	 * @return A unique string identifier.
+	 */
     private String uniqueName(String base, ASTNode context) {
-        usedNames.addAll(collectNames(context));
+        // Refresh the set of unavailable names based on the current context
+    	usedNames.addAll(collectNames(context));
 
         String candidate = base;
         int i = 1;
+
+        // Increment suffix until a name not present in usedNames is found
         while (usedNames.contains(candidate)) {
             candidate = base + i;
             i++;
         }
+        // Reserve the name so it's not picked again in the same transformation pass
         usedNames.add(candidate); 
         return candidate;
     }
 
+    /**
+     * Scans the surrounding block of a given node to collect all declared variable names.
+     * <p>
+     * This method traverses up the AST to find the nearest enclosing {@code Block} 
+     * and extracts identifiers from all local {@code VariableDeclarationStatement} nodes.
+     * </p>
+     * 
+     * @param context The node from which to start searching for the scope.
+     * @return A set of variable names already in use within the identified block.
+     */
    // @SuppressWarnings("unchecked")
     private Set<String> collectNames(ASTNode context) {
         Set<String> names = new java.util.HashSet<>();
         ASTNode block = context;
+        // Traverse up the tree to find the parent Block (the scope boundary)
         while (block != null && !(block instanceof Block)) {
             block = block.getParent();
         }
+        // Extract names from all variable declarations in the block
         if (block instanceof Block b) {
             for (Object o : b.statements()) {
                 if (o instanceof VariableDeclarationStatement vds) {
@@ -390,11 +553,24 @@ public class ForEachToWhileVisitor extends ASTVisitor {
         return names;
     }
     
-    
+    /**
+     * Creates an expression to access the length of an array.
+     * <p>
+     * It intelligently chooses between a {@code QualifiedName} (e.g., {@code myVar.length}) 
+     * and a {@code FieldAccess} (e.g., {@code getArray().length}) based on the 
+     * structure of the input expression to ensure valid AST generation.
+     * </p>
+     * 
+     * @param ast The AST instance.
+     * @param arrayExpr The expression representing the array.
+     * @return An expression representing the '.length' access.
+     */
     private Expression arrayLengthExpr(AST ast, Expression arrayExpr) {
         if (arrayExpr instanceof Name name) {
+            // Case for simple or qualified names: arrayName.length
             return ast.newQualifiedName((Name) ASTNode.copySubtree(ast, name), ast.newSimpleName("length"));
         } else {
+            // Case for more complex expressions: (someCall()).length
             FieldAccess fa = ast.newFieldAccess();
             fa.setExpression((Expression) ASTNode.copySubtree(ast, arrayExpr));
             fa.setName(ast.newSimpleName("length"));
@@ -402,6 +578,17 @@ public class ForEachToWhileVisitor extends ASTVisitor {
         }
     }
 
+    /**
+     * Maps a primitive type to its corresponding object wrapper type (Autoboxing).
+     * <p>
+     * This is required when converting for-each loops over primitive arrays into 
+     * iterator-based loops, as {@code Iterator} only supports object types.
+     * </p>
+     * 
+     * @param ast The AST instance.
+     * @param prim The primitive type to be boxed.
+     * @return A {@code SimpleType} representing the wrapper class (e.g., Integer, Boolean).
+     */
     private Type boxedType(AST ast, PrimitiveType prim) {
         String wrapper;
         PrimitiveType.Code code = prim.getPrimitiveTypeCode();
@@ -415,7 +602,18 @@ public class ForEachToWhileVisitor extends ASTVisitor {
         else wrapper = "Double";
         return ast.newSimpleType(ast.newSimpleName(wrapper));
     }
-	
+
+    /**
+     * Transfers the statements from the original for-each body to the new while-body.
+     * <p>
+     * It prevents unnecessary block nesting by unwrapping the original block 
+     * if it exists, ensuring the resulting code remains clean and readable.
+     * </p>
+     * 
+     * @param ast The AST instance.
+     * @param dest The destination block (the new while-body).
+     * @param originalBody The body of the original enhanced-for statement.
+     */
     @SuppressWarnings("unchecked")
 	private void appendBody(AST ast, Block dest, Statement originalBody) {
         if (originalBody instanceof Block b) {
@@ -427,14 +625,38 @@ public class ForEachToWhileVisitor extends ASTVisitor {
         }
     }
 
+    /**
+     * Checks if a specific library or class is already present in the compilation unit's imports.
+     * <p>
+     * This is used to determine if utility classes like {@code java.util.Iterator} 
+     * or {@code java.util.Arrays} need to be added to the source file.
+     * </p>
+     * 
+     * @param fqn The Fully Qualified Name (FQN) of the class to check.
+     * @return {@code true} if the import is already explicitly declared; {@code false} otherwise.
+     */
     private boolean hasImport(String fqn) {
         for (Object o : cu.imports()) {
             ImportDeclaration id = (ImportDeclaration) o;
+            // Matches explicit imports (e.g., java.util.Iterator) excluding on-demand ones (*)
             if (!id.isOnDemand() && id.getName().getFullyQualifiedName().equals(fqn)) return true;
         }
         return false;
     }
-	
+
+    /**
+     * Declares the loop element variable by accessing the array at the current index.
+     * <p>
+     * It generates a statement like {@code Type element = array[index];} at the 
+     * beginning of the while-body, allowing the original loop logic to remain 
+     * unchanged.
+     * </p>
+     * 
+     * @param node The original for-each statement.
+     * @param ast The AST instance.
+     * @param body The new while-loop body.
+     * @param idxName The name of the index variable (e.g., "i").
+     */
     @SuppressWarnings("unchecked")
     private void addIndexedElementDeclaration(
             EnhancedForStatement node,
@@ -443,11 +665,13 @@ public class ForEachToWhileVisitor extends ASTVisitor {
             String idxName) {
 
         // T e = array[idx];
+        // 1. Create the fragment: element = array[idx]
         VariableDeclarationFragment elemFrag = ast.newVariableDeclarationFragment();
         elemFrag.setName(
                 (SimpleName) ASTNode.copySubtree(ast, node.getParameter().getName())
         );
 
+        // 2. Set up the array access expression: array[index]
         ArrayAccess access = ast.newArrayAccess();
         access.setArray(
                 (Expression) ASTNode.copySubtree(ast, node.getExpression())
@@ -456,6 +680,7 @@ public class ForEachToWhileVisitor extends ASTVisitor {
 
         elemFrag.setInitializer(access);
 
+        // 3. Create the full declaration: Type element = array[idx];
         VariableDeclarationStatement elemDecl =
                 ast.newVariableDeclarationStatement(elemFrag);
 
@@ -463,9 +688,21 @@ public class ForEachToWhileVisitor extends ASTVisitor {
                 (Type) ASTNode.copySubtree(ast, node.getParameter().getType())
         );
 
+        // Add to the top of the body so it's available for the rest of the statements
         body.statements().add(elemDecl);
     }
 
+    /**
+     * Appends the index increment statement to the end of the loop body.
+     * <p>
+     * It generates {@code index++;} to ensure the loop progresses through the 
+     * array elements.
+     * </p>
+     * 
+     * @param ast The AST instance.
+     * @param body The while-loop body.
+     * @param idxName The name of the index variable to increment.
+     */
     @SuppressWarnings("unchecked")
 	private void addIndexIncrement(AST ast, Block body, String idxName) {
         PostfixExpression inc = ast.newPostfixExpression();
@@ -475,7 +712,15 @@ public class ForEachToWhileVisitor extends ASTVisitor {
         body.statements().add(ast.newExpressionStatement(inc));
     }
     
+    /**
+     * Creates the condition expression for the while-loop using the iterator.
+     * 
+     * @param ast The AST instance.
+     * @param itName The name of the iterator variable.
+     * @return A {@code MethodInvocation} representing {@code it.hasNext()}.
+     */
     private Expression buildHasNext(AST ast, String itName) {
+        // Generates the call: itName.hasNext()
         MethodInvocation hasNext = ast.newMethodInvocation();
         hasNext.setExpression(ast.newSimpleName(itName));
         hasNext.setName(ast.newSimpleName("hasNext"));
@@ -492,12 +737,14 @@ public class ForEachToWhileVisitor extends ASTVisitor {
         AST ast = cu.getAST();
         ListRewrite lr = rewrite.getListRewrite(cu, CompilationUnit.IMPORTS_PROPERTY);
 
+        // Add Iterator import if required and not already present
         if (needsIteratorImport && !hasImport("java.util.Iterator")) {
             ImportDeclaration imp = ast.newImportDeclaration();
             imp.setName(ast.newName("java.util.Iterator"));
             lr.insertLast(imp, null);
         }
 
+        // Add Arrays import if required (used for Reference Array conversion)
         if (needsArraysImport && !hasImport("java.util.Arrays")) {
             ImportDeclaration imp = ast.newImportDeclaration();
             imp.setName(ast.newName("java.util.Arrays"));
@@ -505,6 +752,12 @@ public class ForEachToWhileVisitor extends ASTVisitor {
         }
     }
 
+    /**
+     * Signal to finalize the transformation process when the entire 
+     * compilation unit has been visited.
+     * 
+     * @param node The CompilationUnit being finished.
+     */
     @Override
     public void endVisit(CompilationUnit node) {
         addMissingImports(node);

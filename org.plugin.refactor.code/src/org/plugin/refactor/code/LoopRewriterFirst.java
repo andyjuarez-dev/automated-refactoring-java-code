@@ -8,6 +8,7 @@ import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.Block;
+import org.eclipse.jdt.core.dom.DoStatement;
 import org.eclipse.jdt.core.dom.IfStatement;
 import org.eclipse.jdt.core.dom.InfixExpression;
 import org.eclipse.jdt.core.dom.LabeledStatement;
@@ -37,6 +38,9 @@ import org.eclipse.jdt.core.dom.rewrite.ListRewrite;
  */
 public class LoopRewriterFirst extends ASTVisitor {
 
+	/**
+     * Rewriter used to apply structural modifications to the AST.	 
+     */
     private ASTRewrite rewrite;
 
     /**
@@ -66,16 +70,16 @@ public class LoopRewriterFirst extends ASTVisitor {
         if (stmts.isEmpty()) return true;
 
         AST ast = node.getAST();
-        // Lista donde iremos reconstruyendo el bloque
+        // List where we will rebuild the block
         List<Statement> currentGroup = new ArrayList<>();
         
-        // Recorremos de abajo hacia arriba
+        // We go from bottom to top
         for (int i = stmts.size() - 1; i >= 0; i--) {
             Statement stmt = stmts.get(i);
             Statement nodeToProcess = stmt;
             Set<String> moves = null;
 
-            // 1. TRATAMIENTO DE LA MARCA (Etiqueta)
+            // 1. BRAND TREATMENT (Label)
             if (stmt instanceof LabeledStatement) {
                 LabeledStatement labeled = (LabeledStatement) stmt;
                 String labelName = labeled.getLabel().getIdentifier();
@@ -90,17 +94,17 @@ public class LoopRewriterFirst extends ASTVisitor {
                 moves = (Set<String>) stmt.getProperty("moves");
             }
 
-            // 2. LÓGICA DE AGRUPAMIENTO
+            // 2. GROUPING LOGIC
             if (moves != null && !moves.isEmpty()) {
-                // "nodeToProcess" es la sentencia que tiene el move (ej: el break o el i++ con marca)
+                // "nodeToProcess" it is the sentence that has the move (ex: break or i++)
                 Statement targetNode = (nodeToProcess == stmt) 
                     ? (Statement) rewrite.createMoveTarget(stmt) 
                     : nodeToProcess;
 
-                // Añadimos la sentencia actual al grupo que venía de abajo
+                // We added the current sentence to the group that came from below.
                 currentGroup.add(0, targetNode);
 
-                // Creamos el IF que envuelve todo lo acumulado hasta ahora
+                // We created the IF statement that wrapping everything accumulated so far
                 IfStatement ifs = ast.newIfStatement();
                 ifs.setExpression(buildCondition(ast, new ArrayList<>(moves)));
                 
@@ -110,12 +114,16 @@ public class LoopRewriterFirst extends ASTVisitor {
                 }
                 ifs.setThenStatement(thenBlock);
 
-                // Reiniciamos el grupo: ahora el grupo actual es solo el IF
-                // y las sentencias que vengan ARRIBA se irán añadiendo antes de este IF
+                /*
+                 * We reset the group: now the current group is only the IF statement, 
+                 * and the statements that come ABOVE will be added 
+                 * before this IF statement.
+                 */
                 currentGroup = new ArrayList<>();
                 currentGroup.add(ifs);
             } else {
-                // Sentencia normal (o i++ de continue): la añadimos al principio del grupo actual
+                // Normal sentence (or continue i++): 
+            	// We add it to the beginning of the current group
                 Statement target = (nodeToProcess == stmt) 
                     ? (Statement) rewrite.createMoveTarget(stmt) 
                     : nodeToProcess;
@@ -123,11 +131,11 @@ public class LoopRewriterFirst extends ASTVisitor {
             }
         }
 
-        // 3. REEMPLAZO EN EL AST
+        // 3. REPLACEMENT IN THE AST
         ListRewrite lr = rewrite.getListRewrite(node, Block.STATEMENTS_PROPERTY);
-        // Limpiar original
+        // clean original
         for (Statement s : stmts) lr.remove(s, null);
-        // Insertar resultado (currentGroup ya tiene el orden correcto)
+        // insert the result (currentGroup already has the correct orden)
         for (Statement s : currentGroup) lr.insertLast(s, null);
 
         return true;
@@ -166,9 +174,9 @@ public class LoopRewriterFirst extends ASTVisitor {
      */
     private ASTNode getParent(Statement stmt) {
     	ASTNode parent = stmt.getParent();
-    	// TODO: ver de agregar DoStatement
     	while ((parent != null) &&
-    			!(parent instanceof WhileStatement)) {
+    		  !(parent instanceof WhileStatement) &&
+    		  !(parent instanceof DoStatement)) {
     		parent = parent.getParent();
     	}
     	return parent;

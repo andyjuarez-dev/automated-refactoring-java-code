@@ -43,6 +43,14 @@ public class ForMarkerVisitor extends ASTVisitor {
     	markedFors = new HashSet<>();
     }
 
+    /**
+     * Visits break statements to process their enclosing loops.
+     * Labeled breaks are ignored; for unlabeled breaks, the method identifies 
+     * and marks the parent For statement if applicable.
+     * 
+     * @param node The AST node representing the break statement.
+     * @return true to continue the visit, false otherwise.
+     */
     @Override
     public boolean visit(BreakStatement node) {
         // Ignore labeled break statements
@@ -53,6 +61,14 @@ public class ForMarkerVisitor extends ASTVisitor {
         return super.visit(node);
     }
 
+    /**
+     * Visits continue statements to process their enclosing loops.
+     * Labeled continue are ignored; for unlabeled continues, the method identifies 
+     * and marks the parent For statement if applicable.
+     * 
+     * @param node The AST node representing the continue statement.
+     * @return true to continue the visit, false otherwise.
+     */
     @Override
     public boolean visit(ContinueStatement node) {
         // Ignore labeled continue statements
